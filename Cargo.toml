@@ -3,4 +3,9 @@ name = "SysY-Compiler"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+lalrpop = "0.19.12"
+
 [dependencies]
+koopa = "0.0.8"
+lalrpop-util = { version = "0.19.12", features = ["lexer"] }
