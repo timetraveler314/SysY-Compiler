@@ -1,13 +1,26 @@
 use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
 
-pub struct IRContext {
-    pub program: Program,
+#[macro_export]
+macro_rules! get_func_from_context {
+    ($context:expr) => {
+        $context.program.func($context.current_func.unwrap())
+    };
+}
+
+pub struct IRContext<'a> {
+    pub program: &'a mut Program,
     pub current_func: Option<Function>,
     pub current_bb: Option<BasicBlock>,
 }
 
-impl IRContext {
+pub struct ROContext<'a> {
+    pub program: &'a Program,
+    pub current_func: Option<Function>,
+    pub current_bb: Option<BasicBlock>,
+}
+
+impl<'a> IRContext<'a> {
     pub fn func_data_mut(&mut self) -> &mut FunctionData {
         self.program.func_mut(self.current_func.unwrap())
     }

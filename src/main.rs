@@ -1,32 +1,95 @@
 mod frontend;
+mod backend;
 
-use std::env::args;
+use std::fs::File;
 use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
+use crate::frontend::ir_context::ROContext;
+use crate::backend::generate_asm::GenerateAsm;
 
 lalrpop_mod!(sysy);
 
 fn main() -> std::io::Result<()> {
-    let mut args = args();
-    args.next();
-    let _mode = args.next().unwrap();
-    let input = args.next().unwrap();
-    args.next();
-    let output = args.next().unwrap();
+    let (mode, input_file, output_file) = parse_args(std::env::args().collect());
 
-    let input = std::fs::read_to_string(input)?;
+    let input = std::fs::read_to_string(input_file)?;
     let ast = sysy::CompUnitParser::new().parse(&input).unwrap();
-    // Dump AST
-    println!("{:?}", ast);
     let ir = frontend::generate_ir(&ast).unwrap();
+    println!("AST Dump: {:?}", ast);
 
-    // Open output file and write IR to output file
-    let mut output = std::fs::File::create(output)?;
-    let mut gen = KoopaGenerator::new(Vec::new());
-    gen.generate_on(&ir)?;
-    let text_form_ir = std::str::from_utf8(&gen.writer()).unwrap().to_string();
-    output.write_all(text_form_ir.as_bytes())?;
+    match mode {
+        Mode::Koopa => {
+            let mut output = File::create(&output_file)?;
+            let mut gen = KoopaGenerator::new(Vec::new());
+            gen.generate_on(&ir)?;
+            let text_form_ir = std::str::from_utf8(&gen.writer()).unwrap().to_string();
+            println!("Writing IR to file: {}", output_file);
+            output.write_all(text_form_ir.as_bytes())?;
+        }
+        Mode::Riscv => {
+            let mut asm_program = backend::asm::AsmProgram {
+                sections: Vec::new(),
+            };
+            let mut ro_context = ROContext {
+                program: &ir,
+                current_func: None,
+                current_bb: None,
+            };
+            ir.generate(&mut asm_program, &mut ro_context);
+
+            let mut riscv_output = File::create(output_file)?;
+            println!("{:?}", asm_program);
+            asm_program.emit(&mut riscv_output).expect("Failed to emit target code");
+        }
+        Mode::Unknown => unreachable!()
+    }
 
     Ok(())
+}
+
+enum Mode {
+    Koopa,
+    Riscv,
+    Unknown,
+}
+
+fn parse_args(args: Vec<String>) -> (Mode, String, String) {
+    let mut mode = Mode::Unknown;
+    let mut input_file = String::new();
+    let mut output_file = String::new();
+
+    for i in 1..args.len() {
+        match args[i].as_str() {
+            "-koopa" => {
+                mode = Mode::Koopa;
+            }
+            "-riscv" => {
+                mode = Mode::Riscv;
+            }
+            "-o" => {
+                output_file = args[i + 1].clone();
+            }
+            _ => {
+                if i >= 2 && args[i - 1] != "-o" {
+                    input_file = args[i].clone();
+                }
+            }
+        }
+    }
+
+    match mode {
+        Mode::Unknown => {
+            println!("One of -koopa or -riscv must be specified");
+            std::process::exit(1);
+        }
+        _ => {}
+    }
+
+    if input_file.is_empty() || output_file.is_empty() {
+        println!("Usage: {} [-koopa|-riscv] <input_file> -o <output_file>", args[0]);
+        std::process::exit(1);
+    }
+
+    (mode, input_file, output_file)
 }

@@ -5,7 +5,7 @@ use crate::frontend::ir_context::IRContext;
 
 pub mod ast;
 mod generate_ir;
-mod ir_context;
+pub(crate) mod ir_context;
 
 #[derive(Debug)]
 pub enum FrontendError {
@@ -13,11 +13,12 @@ pub enum FrontendError {
 }
 
 pub fn generate_ir(comp_unit: &CompUnit) -> Result<Program, FrontendError> {
+    let mut program = Program::new();
     let mut ircontext = IRContext {
-        program: Program::new(),
+        program: &mut program,
         current_func: None,
         current_bb: None,
     };
     comp_unit.generate_ir(&mut ircontext)?;
-    Ok(ircontext.program)
+    Ok(program)
 }

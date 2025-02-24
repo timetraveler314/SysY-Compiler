@@ -28,14 +28,14 @@ impl IRGenerator for FuncDef {
 
         // Add the function to the program, and set the context's current function
         let func = ircontext.program.new_func(func_data);
-        ircontext.current_func = Some(func);
 
         // Recursively generate IR for the block
-        self.block.generate_ir(ircontext)?;
+        self.block.generate_ir(&mut IRContext {
+            program: ircontext.program,
+            current_func: Some(func),
+            current_bb: None,
+        })?;
 
-        // Exit the current context
-        ircontext.current_func = None;
-        ircontext.current_bb = None;
         Ok(())
     }
 }
