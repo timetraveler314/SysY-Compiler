@@ -1,11 +1,12 @@
 mod frontend;
 mod backend;
+mod common;
 
 use std::fs::File;
 use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
-use crate::frontend::environment::{AsmEnvironment, ROContext};
+use common::environment::{AsmEnvironment, ROContext};
 use crate::backend::generate_asm::GenerateAsm;
 
 lalrpop_mod!(sysy);

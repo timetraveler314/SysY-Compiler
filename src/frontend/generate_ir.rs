@@ -2,7 +2,7 @@ use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
 use crate::frontend::ast::{Block, CompUnit, Expr, FuncDef, Stmt};
 use crate::frontend::FrontendError;
-use crate::frontend::environment::IRContext;
+use crate::common::environment::IRContext;
 
 macro_rules! value_builder {
     ($ircontext:expr) => {

@@ -1,11 +1,10 @@
 use koopa::ir::Program;
 use crate::frontend::ast::CompUnit;
 use crate::frontend::generate_ir::IRGenerator;
-use crate::frontend::environment::IRContext;
+use crate::common::environment::IRContext;
 
 pub mod ast;
 mod generate_ir;
-pub(crate) mod environment;
 
 #[derive(Debug)]
 pub enum FrontendError {

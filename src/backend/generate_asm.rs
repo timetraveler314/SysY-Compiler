@@ -1,6 +1,6 @@
 use crate::backend::instruction::Instruction;
 use crate::backend::register::RVRegister::A0;
-use crate::frontend::environment::{AsmEnvironment, ROContext};
+use crate::common::environment::{AsmEnvironment, ROContext};
 use koopa::ir::{BinaryOp, FunctionData, Program, ValueKind};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::AsmBasicBlock;
