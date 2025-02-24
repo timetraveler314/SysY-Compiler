@@ -73,6 +73,16 @@ impl IRGenerator for Stmt {
     }
 }
 
+macro_rules! generate_binary_expr {
+    ($ircontext:expr, $lhs:expr, $rhs:expr, $op:ident) => {{
+        let lhs_val = $lhs.generate_ir($ircontext)?;
+        let rhs_val = $rhs.generate_ir($ircontext)?;
+        let op = value_builder!($ircontext).binary(BinaryOp::$op, lhs_val, rhs_val);
+        $ircontext.add_instruction(op);
+        Ok(op)
+    }};
+}
+
 impl IRGenerator for Expr {
     type Output = Value;
 
@@ -93,6 +103,41 @@ impl IRGenerator for Expr {
                 let op = value_builder!(ircontext).binary(BinaryOp::Eq, val, zero);
                 ircontext.add_instruction(op);
                 Ok(op)
+            }
+            // Binary operations
+            Expr::Add(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Add),
+            Expr::Sub(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Sub),
+            Expr::Mul(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Mul),
+            Expr::Div(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Div),
+            Expr::Mod(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Mod),
+            // Logical operations
+            Expr::Lt(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Lt),
+            Expr::Gt(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Gt),
+            Expr::Le(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Le),
+            Expr::Ge(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Ge),
+            Expr::Eq(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, Eq),
+            Expr::Ne(lhs, rhs) => generate_binary_expr!(ircontext, lhs, rhs, NotEq),
+            Expr::Land(lhs, rhs) => {
+                let lhs_val = lhs.generate_ir(ircontext)?;
+                let rhs_val = rhs.generate_ir(ircontext)?;
+                let zero = value_builder!(ircontext).integer(0);
+                let lhs_neq_z = value_builder!(ircontext).binary(BinaryOp::NotEq, lhs_val, zero);
+                let rhs_neq_z = value_builder!(ircontext).binary(BinaryOp::NotEq, rhs_val, zero);
+                let op = value_builder!(ircontext).binary(BinaryOp::And, lhs_neq_z, rhs_neq_z);
+                ircontext.add_instruction(lhs_neq_z);
+                ircontext.add_instruction(rhs_neq_z);
+                ircontext.add_instruction(op);
+                Ok(op)
+            }
+            Expr::Lor(lhs, rhs) => {
+                let lhs_val = lhs.generate_ir(ircontext)?;
+                let rhs_val = rhs.generate_ir(ircontext)?;
+                let zero = value_builder!(ircontext).integer(0);
+                let op = value_builder!(ircontext).binary(BinaryOp::Or, lhs_val, rhs_val);
+                let snez = value_builder!(ircontext).binary(BinaryOp::NotEq, op, zero);
+                ircontext.add_instruction(op);
+                ircontext.add_instruction(snez);
+                Ok(snez)
             }
         }
     }

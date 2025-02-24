@@ -25,8 +25,9 @@ Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
 
 Stmt: Stmt = "return" <expr: Exp> ";" => Stmt { <> };
 
+// Exp ::= LOrExp; At Lv 3.3
 Exp: Expr = {
-    <unary: UnaryExp> => unary,
+    <lor: LOrExp> => lor,
 }
 
 PrimaryExp: Expr = {
@@ -39,6 +40,49 @@ UnaryExp: Expr = {
     "+" <unary: UnaryExp> => Expr::Pos(Box::new(unary)),
     "-" <unary: UnaryExp> => Expr::Neg(Box::new(unary)),
     "!" <unary: UnaryExp> => Expr::Not(Box::new(unary)),
+}
+
+// MulExp ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
+MulExp: Expr = {
+    <unary: UnaryExp> => unary,
+    <lhs: MulExp> "*" <rhs: UnaryExp> => Expr::Mul(Box::new(lhs), Box::new(rhs)),
+    <lhs: MulExp> "/" <rhs: UnaryExp> => Expr::Div(Box::new(lhs), Box::new(rhs)),
+    <lhs: MulExp> "%" <rhs: UnaryExp> => Expr::Mod(Box::new(lhs), Box::new(rhs)),
+}
+
+// AddExp ::= MulExp | AddExp ("+" | "-") MulExp;
+AddExp: Expr = {
+    <mul: MulExp> => mul,
+    <lhs: AddExp> "+" <rhs: MulExp> => Expr::Add(Box::new(lhs), Box::new(rhs)),
+    <lhs: AddExp> "-" <rhs: MulExp> => Expr::Sub(Box::new(lhs), Box::new(rhs)),
+}
+
+// RelExp ::= AddExp | RelExp ("<" | ">" | "<=" | ">=") AddExp;
+RelExp: Expr = {
+    <add: AddExp> => add,
+    <lhs: RelExp> "<" <rhs: AddExp> => Expr::Lt(Box::new(lhs), Box::new(rhs)),
+    <lhs: RelExp> ">" <rhs: AddExp> => Expr::Gt(Box::new(lhs), Box::new(rhs)),
+    <lhs: RelExp> "<=" <rhs: AddExp> => Expr::Le(Box::new(lhs), Box::new(rhs)),
+    <lhs: RelExp> ">=" <rhs: AddExp> => Expr::Ge(Box::new(lhs), Box::new(rhs)),
+}
+
+// EqExp ::= RelExp | EqExp ("==" | "!=") RelExp;
+EqExp: Expr = {
+    <rel: RelExp> => rel,
+    <lhs: EqExp> "==" <rhs: RelExp> => Expr::Eq(Box::new(lhs), Box::new(rhs)),
+    <lhs: EqExp> "!=" <rhs: RelExp> => Expr::Ne(Box::new(lhs), Box::new(rhs)),
+}
+
+// LAndExp ::= EqExp | LAndExp "&&" EqExp;
+LAndExp: Expr = {
+    <eq: EqExp> => eq,
+    <lhs: LAndExp> "&&" <rhs: EqExp> => Expr::Land(Box::new(lhs), Box::new(rhs)),
+}
+
+// LOrExp ::= LAndExp | LOrExp "||" LAndExp;
+LOrExp: Expr = {
+    <land: LAndExp> => land,
+    <lhs: LOrExp> "||" <rhs: LAndExp> => Expr::Lor(Box::new(lhs), Box::new(rhs)),
 }
 
 // `<>` stands for the matched string

@@ -7,7 +7,6 @@ use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 use crate::frontend::environment::{AsmEnvironment, ROContext};
 use crate::backend::generate_asm::GenerateAsm;
-use crate::backend::register::RVRegisterIterator;
 
 lalrpop_mod!(sysy);
 
@@ -37,7 +36,7 @@ fn main() -> std::io::Result<()> {
                     program: &ir,
                     current_func: None,
                     current_bb: None,
-                    it: RVRegisterIterator::new(),
+                    pool: backend::register::RVRegisterPool::new_temp_pool(),
                 },
                 register_table: std::collections::HashMap::new(),
             };

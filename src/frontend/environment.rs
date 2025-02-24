@@ -1,7 +1,7 @@
 use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
 use koopa::ir::entities::ValueData;
-use crate::backend::register::{RVRegister, RVRegisterIterator};
+use crate::backend::register::{RVRegister, RVRegisterPool};
 
 #[macro_export]
 macro_rules! get_func_from_context {
@@ -30,7 +30,7 @@ impl<'a> AsmEnvironment<'a> {
                 program,
                 current_func: None,
                 current_bb: None,
-                it: RVRegisterIterator::new(),
+                pool: RVRegisterPool::new_temp_pool()
             },
             register_table: std::collections::HashMap::new(),
         }
@@ -38,9 +38,17 @@ impl<'a> AsmEnvironment<'a> {
 
     pub fn apply_register(&mut self, value: &ValueData) -> RVRegister {
         println!("Applying register for {:?}", value);
-        let register = self.context.it.next().unwrap();
+        let register = self.context.pool.next().unwrap();
         self.register_table.insert(value as *const ValueData, register);
         register
+    }
+
+    pub fn free_register(&mut self, value: &ValueData) {
+        println!("Freeing register for {:?}", value);
+        // Just try to remove, if cannot remove, give up
+        if let Some(register) = self.register_table.remove(&(value as *const ValueData)) {
+            self.context.pool.release(register);
+        }
     }
 }
 
@@ -56,7 +64,7 @@ pub struct ROContext<'a> {
     pub current_bb: Option<BasicBlock>,
 
     // TODO: Improve this
-    pub it: RVRegisterIterator
+    pub pool: RVRegisterPool
 }
 
 impl<'a> IRContext<'a> {

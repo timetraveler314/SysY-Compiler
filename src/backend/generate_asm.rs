@@ -1,11 +1,11 @@
 use crate::backend::instruction::Instruction;
 use crate::backend::register::RVRegister::A0;
 use crate::frontend::environment::{AsmEnvironment, ROContext};
-use koopa::ir::{FunctionData, Program, Value, ValueKind};
+use koopa::ir::{BinaryOp, FunctionData, Program, ValueKind};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::AsmBasicBlock;
-use crate::backend::register::{RVRegister, RVRegisterIterator};
-use crate::{get_func_from_context, get_func_from_env};
+use crate::backend::register::{RVRegister, RVRegisterPool};
+use crate::get_func_from_env;
 
 pub trait GenerateAsm {
     type Target;
@@ -36,7 +36,7 @@ impl GenerateAsm for Program {
                     program: self,
                     current_func: Some(func_h),
                     current_bb: None,
-                    it: RVRegisterIterator::new(),
+                    pool: RVRegisterPool::new_temp_pool()
                 },
                 register_table: std::collections::HashMap::new(),
             });
@@ -83,6 +83,10 @@ impl ValueGenerateAsm for ValueData {
 
         match self.kind() {
             ValueKind::Integer(int) => {
+                if int.value() == 0 {
+                    return Some(RVRegister::Zero);
+                }
+
                 let rd = env.apply_register(self);
                 target.instructions.push(Instruction::Li {
                     rd,
@@ -100,6 +104,49 @@ impl ValueGenerateAsm for ValueData {
                 });
                 target.instructions.push(Instruction::Ret);
                 None
+            }
+            ValueKind::Binary(bin) => {
+                let rs1 = func_data.dfg().value(bin.lhs()).generate_value(target, env).unwrap();
+                let rs2 = func_data.dfg().value(bin.rhs()).generate_value(target, env).unwrap();
+
+                let rd = env.apply_register(self);
+                let instructions = match bin.op() {
+                    BinaryOp::NotEq => {
+                        vec![
+                            Instruction::Xor { rd, rs1, rs2 },
+                            Instruction::Snez { rd, rs: rd },
+                        ]
+                    }
+                    BinaryOp::Eq => {
+                        vec![
+                            Instruction::Xor { rd, rs1, rs2 },
+                            Instruction::Seqz { rd, rs: rd },
+                        ]
+                    }
+                    BinaryOp::Gt => { vec![Instruction::Sgt { rd, rs1, rs2 }] }
+                    BinaryOp::Lt => { vec![Instruction::Slt { rd, rs1, rs2 }] }
+                    BinaryOp::Ge => { vec![Instruction::Slt { rd, rs1, rs2 }, Instruction::Seqz { rd, rs: rd }] }
+                    BinaryOp::Le => { vec![Instruction::Sgt { rd, rs1, rs2 }, Instruction::Seqz { rd, rs: rd }] }
+                    BinaryOp::Add => { vec![Instruction::Add { rd, rs1, rs2 }] }
+                    BinaryOp::Sub => { vec![Instruction::Sub { rd, rs1, rs2 }] }
+                    BinaryOp::Mul => { vec![Instruction::Mul { rd, rs1, rs2 }] }
+                    BinaryOp::Div => { vec![Instruction::Div { rd, rs1, rs2 }] }
+                    BinaryOp::Mod => { vec![Instruction::Rem { rd, rs1, rs2 }] }
+                    BinaryOp::And => { vec![Instruction::And { rd, rs1, rs2 }] }
+                    BinaryOp::Or => { vec![Instruction::Or { rd, rs1, rs2 }] }
+                    // BinaryOp::Xor => {}
+                    // BinaryOp::Shl => {}
+                    // BinaryOp::Shr => {}
+                    // BinaryOp::Sar => {}
+                    _ => unreachable!()
+                };
+
+                target.instructions.extend(instructions);
+
+                env.free_register(func_data.dfg().value(bin.lhs()));
+                env.free_register(func_data.dfg().value(bin.rhs()));
+
+                Some(rd)
             }
             _ => unreachable!(),
         }

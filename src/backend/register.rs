@@ -1,7 +1,10 @@
-#[derive(Debug, Copy, Clone)]
+use std::collections::HashSet;
+
+#[derive(Debug, Copy, Clone, Eq, Hash, PartialEq)]
 pub enum RVRegister {
     A0,
     T0, T1, T2, T3, T4, T5, T6,
+    Zero,
 }
 
 impl std::fmt::Display for RVRegister {
@@ -16,6 +19,8 @@ impl std::fmt::Display for RVRegister {
             RVRegister::T4 => write!(f, "t4"),
             RVRegister::T5 => write!(f, "t5"),
             RVRegister::T6 => write!(f, "t6"),
+
+            RVRegister::Zero => write!(f, "x0"),
         }
     }
 }
@@ -23,37 +28,30 @@ impl std::fmt::Display for RVRegister {
 // TODO: Temporary solution
 // An iterator that iterates over t0-t6
 
-#[derive(Copy, Clone)]
-pub struct RVRegisterIterator {
-    current: usize,
+#[derive(Clone)]
+pub struct RVRegisterPool {
+    avail: HashSet<RVRegister>
 }
 
-impl RVRegisterIterator {
-    pub fn new() -> Self {
-        RVRegisterIterator { current: 1 }
-    }
-}
-
-impl Iterator for RVRegisterIterator {
-    type Item = RVRegister;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Iterates from T0 to T6 (indices 1 to 7)
-        if self.current >= 1 && self.current <= 6 {
-            let reg = match self.current {
-                1 => RVRegister::T0,
-                2 => RVRegister::T1,
-                3 => RVRegister::T2,
-                4 => RVRegister::T3,
-                5 => RVRegister::T4,
-                6 => RVRegister::T5,
-                7 => RVRegister::T6,
-                _ => return None,
-            };
-            self.current += 1;
-            Some(reg)
-        } else {
-            None
+impl RVRegisterPool {
+    pub fn new_temp_pool() -> Self {
+        RVRegisterPool {
+            avail: vec![
+                RVRegister::T0, RVRegister::T1, RVRegister::T2, RVRegister::T3,
+                RVRegister::T4, RVRegister::T5, RVRegister::T6
+            ].into_iter().collect()
         }
+    }
+
+    pub fn next(&mut self) -> Option<RVRegister> {
+        let register = self.avail.iter().next().cloned();
+        if let Some(register) = register {
+            self.avail.remove(&register);
+        }
+        register
+    }
+
+    pub fn release(&mut self, register: RVRegister) {
+        self.avail.insert(register);
     }
 }
