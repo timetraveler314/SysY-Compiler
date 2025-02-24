@@ -1,8 +1,14 @@
-use koopa::ir::{FunctionData, Type};
+use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
-use crate::frontend::ast::{Block, CompUnit, FuncDef, Stmt};
+use crate::frontend::ast::{Block, CompUnit, Expr, FuncDef, Stmt};
 use crate::frontend::FrontendError;
-use crate::frontend::ir_context::IRContext;
+use crate::frontend::environment::IRContext;
+
+macro_rules! value_builder {
+    ($ircontext:expr) => {
+        $ircontext.func_data_mut().dfg_mut().new_value()
+    };
+}
 
 pub trait IRGenerator {
     type Output;
@@ -60,10 +66,34 @@ impl IRGenerator for Stmt {
 
     fn generate_ir(&self, ircontext: &mut IRContext) -> Result<Self::Output, FrontendError> {
         // TODO: Currently only support `return` statement
-        let func_data_mut = ircontext.func_data_mut();
-        let return_val = func_data_mut.dfg_mut().new_value().integer(self.num);
-        let return_stmt = func_data_mut.dfg_mut().new_value().ret(Some(return_val));
+        let return_val = self.expr.generate_ir(ircontext)?;
+        let return_stmt = value_builder!(ircontext).ret(Some(return_val));
         ircontext.add_instruction(return_stmt);
         Ok(())
+    }
+}
+
+impl IRGenerator for Expr {
+    type Output = Value;
+
+    fn generate_ir(&self, ircontext: &mut IRContext) -> Result<Self::Output, FrontendError> {
+        match self {
+            Expr::Num(num) => Ok(value_builder!(ircontext).integer(*num)),
+            Expr::Pos(expr) => expr.generate_ir(ircontext),
+            Expr::Neg(expr) => {
+                let zero = value_builder!(ircontext).integer(0);
+                let val = expr.generate_ir(ircontext)?;
+                let op = value_builder!(ircontext).binary(BinaryOp::Sub, zero, val);
+                ircontext.add_instruction(op);
+                Ok(op)
+            }
+            Expr::Not(expr) => {
+                let zero = value_builder!(ircontext).integer(0);
+                let val = expr.generate_ir(ircontext)?;
+                let op = value_builder!(ircontext).binary(BinaryOp::Eq, val, zero);
+                ircontext.add_instruction(op);
+                Ok(op)
+            }
+        }
     }
 }

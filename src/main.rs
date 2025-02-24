@@ -5,8 +5,9 @@ use std::fs::File;
 use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
-use crate::frontend::ir_context::ROContext;
+use crate::frontend::environment::{AsmEnvironment, ROContext};
 use crate::backend::generate_asm::GenerateAsm;
+use crate::backend::register::RVRegisterIterator;
 
 lalrpop_mod!(sysy);
 
@@ -31,12 +32,16 @@ fn main() -> std::io::Result<()> {
             let mut asm_program = backend::asm::AsmProgram {
                 sections: Vec::new(),
             };
-            let mut ro_context = ROContext {
-                program: &ir,
-                current_func: None,
-                current_bb: None,
+            let mut env = AsmEnvironment {
+                context: ROContext {
+                    program: &ir,
+                    current_func: None,
+                    current_bb: None,
+                    it: RVRegisterIterator::new(),
+                },
+                register_table: std::collections::HashMap::new(),
             };
-            ir.generate(&mut asm_program, &mut ro_context);
+            ir.generate(&mut asm_program, &mut env);
 
             let mut riscv_output = File::create(output_file)?;
             println!("{:?}", asm_program);

@@ -23,12 +23,28 @@ FuncType: FuncType = "int" => FuncType::Int;
 
 Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
 
-Stmt: Stmt = "return" <num: Number> ";" => Stmt { <> };
+Stmt: Stmt = "return" <expr: Exp> ";" => Stmt { <> };
 
-Number: i32 = <num: IntConst> => num;
+Exp: Expr = {
+    <unary: UnaryExp> => unary,
+}
+
+PrimaryExp: Expr = {
+    "(" <expr: Exp> ")" => expr,
+    <num: Number> => Expr::Num(num),
+}
+
+UnaryExp: Expr = {
+    <primary: PrimaryExp> => primary,
+    "+" <unary: UnaryExp> => Expr::Pos(Box::new(unary)),
+    "-" <unary: UnaryExp> => Expr::Neg(Box::new(unary)),
+    "!" <unary: UnaryExp> => Expr::Not(Box::new(unary)),
+}
 
 // `<>` stands for the matched string
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
+
+Number: i32 = <IntConst>;
 
 // Integer Literal
 IntConst: i32 = {

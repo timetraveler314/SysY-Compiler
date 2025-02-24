@@ -1,11 +1,47 @@
 use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
+use koopa::ir::entities::ValueData;
+use crate::backend::register::{RVRegister, RVRegisterIterator};
 
 #[macro_export]
 macro_rules! get_func_from_context {
     ($context:expr) => {
         $context.program.func($context.current_func.unwrap())
     };
+}
+
+#[macro_export]
+macro_rules! get_func_from_env {
+    ($env:expr) => {
+        $env.context.program.func($env.context.current_func.unwrap())
+    };
+}
+
+pub struct AsmEnvironment<'a> {
+    pub context: ROContext<'a>,
+    // Map from Value to its result register
+    pub register_table: std::collections::HashMap<*const ValueData, RVRegister>,
+}
+
+impl<'a> AsmEnvironment<'a> {
+    pub fn new(program: &'a Program) -> Self {
+        AsmEnvironment {
+            context: ROContext {
+                program,
+                current_func: None,
+                current_bb: None,
+                it: RVRegisterIterator::new(),
+            },
+            register_table: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn apply_register(&mut self, value: &ValueData) -> RVRegister {
+        println!("Applying register for {:?}", value);
+        let register = self.context.it.next().unwrap();
+        self.register_table.insert(value as *const ValueData, register);
+        register
+    }
 }
 
 pub struct IRContext<'a> {
@@ -18,6 +54,9 @@ pub struct ROContext<'a> {
     pub program: &'a Program,
     pub current_func: Option<Function>,
     pub current_bb: Option<BasicBlock>,
+
+    // TODO: Improve this
+    pub it: RVRegisterIterator
 }
 
 impl<'a> IRContext<'a> {

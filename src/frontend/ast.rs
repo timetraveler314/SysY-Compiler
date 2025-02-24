@@ -23,5 +23,13 @@ pub struct Block {
 // Only support `return` statement right now
 #[derive(Debug)]
 pub struct Stmt {
-    pub num: i32,
+    pub expr: Expr,
+}
+
+#[derive(Debug)]
+pub enum Expr {
+    Num(i32),
+    Pos(Box<Expr>),
+    Neg(Box<Expr>),
+    Not(Box<Expr>),
 }
