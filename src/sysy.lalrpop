@@ -10,18 +10,52 @@ match {
     _
 }
 
+Comma<T>: Vec<T> = {
+    <head: T> <tail: ("," <T>)*> => {
+        let mut v = vec![head];
+        v.extend(tail);
+        v
+    }
+}
+
 // Syntax
 pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit { <> };
 
 FuncDef: FuncDef = {
-    <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
-        FuncDef { <> }
-    }
+    <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => FuncDef { <> }
 }
 
 FuncType: FuncType = "int" => FuncType::Int;
 
-Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
+Block: Block = "{" <items: BlockItem*> "}" => Block { <> };
+
+BlockItem: BlockItem = {
+    <decl: Decl> => BlockItem::Decl(decl),
+    <stmt: Stmt> => BlockItem::Stmt(stmt),
+}
+
+// Declaration
+
+// Decl ::= ConstDecl
+Decl: Decl = {
+    <const_decl: ConstDecl> => Decl::ConstDecl(const_decl),
+}
+
+ConstDecl: ConstDecl = {
+    "const" <btype: BType> <defs: Comma<ConstDef>> ";" => ConstDecl { <> }
+}
+
+ConstDef: ConstDef = {
+    <ident: Ident> "=" <init_val: ConstInitVal> => ConstDef { <> }
+}
+
+ConstInitVal: ConstInitVal = {
+    <expr: ConstExp> => ConstInitVal::Expr(expr),
+}
+
+BType: BType = {
+    "int" => BType::Int,
+}
 
 Stmt: Stmt = "return" <expr: Exp> ";" => Stmt { <> };
 
@@ -30,8 +64,13 @@ Exp: Expr = {
     <lor: LOrExp> => lor,
 }
 
+ConstExp: Expr = {
+    <expr: Exp> => expr,
+}
+
 PrimaryExp: Expr = {
     "(" <expr: Exp> ")" => expr,
+    <lval: LVal> => Expr::LVal(lval),
     <num: Number> => Expr::Num(num),
 }
 
@@ -87,6 +126,10 @@ LOrExp: Expr = {
 
 // `<>` stands for the matched string
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
+
+LVal: LVal = {
+    <ident: Ident> => LVal { ident }
+}
 
 Number: i32 = <IntConst>;
 

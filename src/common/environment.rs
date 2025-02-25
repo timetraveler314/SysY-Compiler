@@ -2,6 +2,7 @@ use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
 use koopa::ir::entities::ValueData;
 use crate::backend::register::{RVRegister, RVRegisterPool};
+use crate::frontend::ast::{LVal};
 
 #[macro_export]
 macro_rules! get_func_from_context {
@@ -15,6 +16,22 @@ macro_rules! get_func_from_env {
     ($env:expr) => {
         $env.context.program.func($env.context.current_func.unwrap())
     };
+}
+
+#[derive(Clone)]
+pub enum SymbolTableEntry {
+    Const(String, i32),
+}
+
+pub struct IREnvironment<'a> {
+    pub context: IRContext<'a>,
+    pub symbol_table: std::collections::HashMap<String, SymbolTableEntry>,
+}
+
+impl<'a> IREnvironment<'a> {
+    pub fn lookup(&self, lval: &LVal) -> Option<SymbolTableEntry> {
+        self.symbol_table.get(&lval.ident).cloned()
+    }
 }
 
 pub struct AsmEnvironment<'a> {

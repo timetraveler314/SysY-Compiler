@@ -16,8 +16,8 @@ fn main() -> std::io::Result<()> {
 
     let input = std::fs::read_to_string(input_file)?;
     let ast = sysy::CompUnitParser::new().parse(&input).unwrap();
-    let ir = frontend::generate_ir(&ast).unwrap();
     println!("AST Dump: {:?}", ast);
+    let ir = frontend::generate_ir(&ast).unwrap();
 
     match mode {
         Mode::Koopa => {
