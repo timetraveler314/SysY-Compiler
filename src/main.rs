@@ -32,15 +32,7 @@ fn main() -> std::io::Result<()> {
             let mut asm_program = backend::asm::AsmProgram {
                 sections: Vec::new(),
             };
-            let mut env = AsmEnvironment {
-                context: ROContext {
-                    program: &ir,
-                    current_func: None,
-                    current_bb: None,
-                    pool: backend::register::RVRegisterPool::new_temp_pool(),
-                },
-                register_table: std::collections::HashMap::new(),
-            };
+            let mut env = AsmEnvironment::new(&ir);
             ir.generate(&mut asm_program, &mut env);
 
             let mut riscv_output = File::create(output_file)?;

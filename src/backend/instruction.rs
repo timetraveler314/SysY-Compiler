@@ -2,7 +2,10 @@ use crate::backend::register::RVRegister;
 
 #[derive(Debug)]
 pub enum Instruction {
+    Addi { rd: RVRegister, rs: RVRegister, imm: i32 },
     Li { rd: RVRegister, imm: i32 },
+    Lw { rd: RVRegister, rs: RVRegister, imm: i32 },
+    Sw { rs: RVRegister, rd: RVRegister, imm: i32 },
     Mv { rd: RVRegister, rs: RVRegister },
     Add { rd: RVRegister, rs1: RVRegister, rs2: RVRegister },
     Sub { rd: RVRegister, rs1: RVRegister, rs2: RVRegister },
@@ -23,7 +26,10 @@ pub enum Instruction {
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Instruction::Addi { rd, rs, imm } => write!(f, "addi {}, {}, {}", rd, rs, imm),
             Instruction::Li { rd, imm } => write!(f, "li {}, {}", rd, imm),
+            Instruction::Lw { rd, rs, imm } => write!(f, "lw {}, {}({})", rd, imm, rs),
+            Instruction::Sw { rs, rd, imm } => write!(f, "sw {}, {}({})", rs, imm, rd),
             Instruction::Mv { rd, rs } => write!(f, "mv {}, {}", rd, rs),
             Instruction::Add { rd, rs1, rs2 } => write!(f, "add {}, {}, {}", rd, rs1, rs2),
             Instruction::Sub { rd, rs1, rs2 } => write!(f, "sub {}, {}, {}", rd, rs1, rs2),
