@@ -177,8 +177,25 @@ impl ValueGenerateAsm for ValueData {
                 env.free_register(rs2);
                 env.store_data(target, self, Some(rd));
             }
-            ValueKind::Alloc(alloc) => {
-                unimplemented!()
+            ValueKind::Alloc(_) => {
+                env.alloc_stack_storage(self, 4);
+            }
+            ValueKind::Load(load) => {
+                // Trivially, load should write to another stack space
+                // just as what we did in binary
+                env.alloc_stack_storage(self, 4);
+
+                let from = func_data.dfg().value(load.src());
+                let rs = env.load_data(target, from);
+                env.store_data(target, self, Some(rs));
+            }
+            ValueKind::Store(store) => {
+                let src_value_data = func_data.dfg().value(store.value());
+
+                src_value_data.generate_value(target, env);
+
+                let src = env.load_data(target, src_value_data);
+                env.store_data(target, func_data.dfg().value(store.dest()), Some(src));
             }
             _ => unreachable!(),
         }
