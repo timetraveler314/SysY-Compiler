@@ -3,6 +3,8 @@ use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
 use koopa::ir::entities::ValueData;
 use crate::backend::register::{RVRegister, RVRegisterPool};
 use crate::frontend::ast::{LVal};
+use crate::frontend::FrontendError;
+use crate::frontend::symbol::SymbolTableEntry;
 
 #[macro_export]
 macro_rules! get_func_from_context {
@@ -18,11 +20,6 @@ macro_rules! get_func_from_env {
     };
 }
 
-#[derive(Clone)]
-pub enum SymbolTableEntry {
-    Const(String, i32),
-}
-
 pub struct IREnvironment<'a> {
     pub context: IRContext<'a>,
     pub symbol_table: std::collections::HashMap<String, SymbolTableEntry>,
@@ -30,7 +27,15 @@ pub struct IREnvironment<'a> {
 
 impl<'a> IREnvironment<'a> {
     pub fn lookup(&self, lval: &LVal) -> Option<SymbolTableEntry> {
-        self.symbol_table.get(&lval.ident).cloned()
+        self.symbol_table.get(lval.ident().into()).cloned()
+    }
+
+    pub fn bind(&mut self, ident: &str, entry: SymbolTableEntry) -> Result<(), FrontendError> {
+        if self.symbol_table.contains_key(ident) {
+            return Err(FrontendError::MultipleDefinitionsForIdentifier(ident.into()));
+        }
+        self.symbol_table.insert(ident.into(), entry);
+        Ok(())
     }
 }
 

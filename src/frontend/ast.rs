@@ -1,6 +1,7 @@
-use crate::common::environment::{IREnvironment, SymbolTableEntry};
+use crate::common::environment::{IREnvironment};
 use crate::frontend::FrontendError;
 use crate::frontend::FrontendError::{BindingNonConstExpr, ConstEvalDivZero};
+use crate::frontend::symbol::SymbolTableEntry;
 
 #[derive(Debug)]
 pub struct CompUnit {
@@ -38,6 +39,7 @@ pub enum BlockItem {
 #[derive(Debug)]
 pub enum Decl {
     ConstDecl(ConstDecl),
+    VarDecl(VarDecl),
 }
 
 #[derive(Debug)]
@@ -57,15 +59,40 @@ pub enum ConstInitVal {
     Expr(Expr),
 }
 
-// Only support `return` statement right now
 #[derive(Debug)]
-pub struct Stmt {
-    pub expr: Expr,
+pub struct VarDecl {
+    pub btype: BType,
+    pub defs: Vec<VarDef>,
 }
 
 #[derive(Debug)]
-pub struct LVal {
-    pub ident: String,
+pub enum VarDef {
+    Ident(String),
+    Init(String, Expr),
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    Return(Expr),
+    Assign(LVal, Expr),
+}
+
+#[derive(Debug)]
+pub enum InitVal {
+    Expr(Expr),
+}
+
+#[derive(Debug)]
+pub enum LVal {
+    Ident(String),
+}
+
+impl LVal {
+    pub fn ident(&self) -> &str {
+        match self {
+            LVal::Ident(ident) => ident,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -106,10 +133,11 @@ impl Expr {
             Expr::Num(num) => Ok(*num),
             Expr::LVal(lval) => {
                 match env.lookup(lval) {
-                    None => Err(BindingNonConstExpr(lval.ident.clone())),
+                    None => Err(BindingNonConstExpr(lval.ident().into())),
                     Some(entry) => {
                         match entry {
                             SymbolTableEntry::Const(_, num) => Ok(num),
+                            SymbolTableEntry::Var(_) => Err(BindingNonConstExpr(lval.ident().into())),
                         }
                     }
                 }

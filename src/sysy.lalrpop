@@ -39,6 +39,7 @@ BlockItem: BlockItem = {
 // Decl ::= ConstDecl
 Decl: Decl = {
     <const_decl: ConstDecl> => Decl::ConstDecl(const_decl),
+    <var_decl: VarDecl> => Decl::VarDecl(var_decl),
 }
 
 ConstDecl: ConstDecl = {
@@ -53,11 +54,27 @@ ConstInitVal: ConstInitVal = {
     <expr: ConstExp> => ConstInitVal::Expr(expr),
 }
 
+VarDecl: VarDecl = {
+    <btype: BType> <defs: Comma<VarDef>> ";" => VarDecl { <> }
+}
+
+VarDef: VarDef = {
+    <ident: Ident> => VarDef::Ident(ident),
+    <ident: Ident> "=" <expr: Exp> => VarDef::Init(ident, expr),
+}
+
+VarInitVal: InitVal = {
+    <expr: Exp> => InitVal::Expr(expr),
+}
+
 BType: BType = {
     "int" => BType::Int,
 }
 
-Stmt: Stmt = "return" <expr: Exp> ";" => Stmt { <> };
+Stmt: Stmt = {
+    "return" <expr: Exp> ";" => Stmt::Return(expr),
+    <lv: LVal> "=" <expr: Exp> ";" => Stmt::Assign(lv, expr),
+}
 
 // Exp ::= LOrExp; At Lv 3.3
 Exp: Expr = {
@@ -128,7 +145,7 @@ LOrExp: Expr = {
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
 
 LVal: LVal = {
-    <ident: Ident> => LVal { ident }
+    <ident: Ident> => LVal::Ident(ident),
 }
 
 Number: i32 = <IntConst>;

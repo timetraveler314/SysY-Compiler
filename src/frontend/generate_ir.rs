@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
-use crate::frontend::ast::{Block, BlockItem, CompUnit, ConstInitVal, Decl, Expr, FuncDef, Stmt};
+use crate::frontend::ast::{Block, BlockItem, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
 use crate::frontend::FrontendError;
-use crate::common::environment::{IRContext, IREnvironment, SymbolTableEntry};
+use crate::common::environment::{IRContext, IREnvironment};
+use crate::frontend::symbol::SymbolTableEntry;
 
 macro_rules! value_builder {
     ($env:expr) => {
@@ -98,6 +99,33 @@ impl IRGenerator for Decl {
                 }
                 Ok(())
             }
+            Decl::VarDecl(var_decl) => {
+                // TODO: Now assuming BType int
+                for var_def in var_decl.defs.iter() {
+                    match var_def {
+                        VarDef::Ident(ident) => {
+                            // Alloc for the variable
+                            // TODO: Any way to assign a name to the value in the IR?
+                            let var = value_builder!(env).alloc(Type::get_i32());
+                            env.context.add_instruction(var);
+                            env.bind(ident, SymbolTableEntry::Var(var))?;
+                        }
+                        VarDef::Init(ident, expr) => {
+                            // Alloc for the variable
+                            let var = value_builder!(env).alloc(Type::get_i32());
+                            env.context.add_instruction(var);
+
+                            // Assign the value
+                            let val = expr.generate_ir(env)?;
+                            let store = value_builder!(env).store(val, var);
+                            env.context.add_instruction(store);
+
+                            env.bind(ident, SymbolTableEntry::Var(var))?;
+                        }
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -106,11 +134,34 @@ impl IRGenerator for Stmt {
     type Output = ();
 
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
-        // TODO: Currently only support `return` statement
-        let return_val = self.expr.generate_ir(env)?;
-        let return_stmt = value_builder!(env).ret(Some(return_val));
-        env.context.add_instruction(return_stmt);
-        Ok(())
+        match self {
+            Stmt::Return(expr) => {
+                let return_val = expr.generate_ir(env)?;
+                let return_stmt = value_builder!(env).ret(Some(return_val));
+                env.context.add_instruction(return_stmt);
+                Ok(())
+            }
+            Stmt::Assign(lval, expr) => {
+                match lval {
+                    LVal::Ident(ident) => {
+                        // Assign the value
+                        let val = expr.generate_ir(env)?;
+                        if let Some(entry) = env.lookup(lval) {
+                            match entry {
+                                SymbolTableEntry::Var(var) => {
+                                    let store = value_builder!(env).store(val, var);
+                                    env.context.add_instruction(store);
+                                    Ok(())
+                                }
+                                _ => Err(FrontendError::InvalidAssignmentToConst)
+                            }
+                        } else {
+                            Err(FrontendError::DefinitionNotFoundForIdentifier(ident.clone()))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -132,10 +183,15 @@ impl IRGenerator for Expr {
             Expr::Num(num) => Ok(value_builder!(env).integer(*num)),
             Expr::LVal(lval) => {
                 match env.lookup(lval) {
-                    None => Err(FrontendError::NoBindingForIdentifier(lval.ident.clone())),
+                    None => Err(FrontendError::DefinitionNotFoundForIdentifier(lval.ident().into())),
                     Some(entry) => {
                         match entry {
                             SymbolTableEntry::Const(_, num) => Ok(value_builder!(env).integer(num)),
+                            SymbolTableEntry::Var(var) => {
+                                let load = value_builder!(env).load(var);
+                                env.context.add_instruction(load);
+                                Ok(load)
+                            }
                         }
                     }
                 }

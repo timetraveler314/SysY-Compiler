@@ -4,14 +4,17 @@ use crate::frontend::generate_ir::IRGenerator;
 use crate::common::environment::{IRContext, IREnvironment};
 
 pub mod ast;
+pub mod symbol;
 mod generate_ir;
 
 #[derive(Debug)]
 pub enum FrontendError {
     // ParseError(String),
-    NoBindingForIdentifier(String),
+    MultipleDefinitionsForIdentifier(String),
+    DefinitionNotFoundForIdentifier(String),
     BindingNonConstExpr(String),
     ConstEvalDivZero,
+    InvalidAssignmentToConst,
 }
 
 pub fn generate_ir(comp_unit: &CompUnit) -> Result<Program, FrontendError> {
