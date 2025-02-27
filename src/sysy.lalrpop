@@ -74,6 +74,13 @@ BType: BType = {
 Stmt: Stmt = {
     "return" <expr: Exp> ";" => Stmt::Return(expr),
     <lv: LVal> "=" <expr: Exp> ";" => Stmt::Assign(lv, expr),
+    <maybe_expr: Exp?> ";" => {
+        match maybe_expr {
+            Some(expr) => Stmt::Expr(expr),
+            None => Stmt::Empty,
+        }
+    },
+    <block: Block> => Stmt::Block(block),
 }
 
 // Exp ::= LOrExp; At Lv 3.3

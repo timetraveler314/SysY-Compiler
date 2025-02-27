@@ -40,7 +40,11 @@ impl IRGenerator for FuncDef {
         let func = env.context.program.borrow_mut().new_func(func_data);
 
         // Recursively generate IR for the block
-        self.block.generate_ir(&mut env.enter_func(func))?;
+
+        let mut new_env = env.enter_func(func);
+        // TODO: Currently only 1 bb, just mutate the env for the bb
+        let _entry_bb = new_env.context.create_block(Some("%entry".into()));
+        self.block.generate_ir(&mut new_env)?;
 
         Ok(())
     }
@@ -50,15 +54,11 @@ impl IRGenerator for Block {
     type Output = ();
 
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
-        env.context.create_block(Some("%entry".into()));
-
         // Recursively generate IR for the statement
         for block_item in self.items.iter() {
             block_item.generate_ir(env)?;
         }
 
-        // Exit the current block
-        env.context.current_bb = None;
         Ok(())
     }
 }
@@ -155,6 +155,17 @@ impl IRGenerator for Stmt {
                         }
                     }
                 }
+            }
+            Stmt::Expr(expr) => {
+                // TODO: validate the correctness here
+                expr.generate_ir(env)?;
+                Ok(())
+            }
+            Stmt::Empty => { Ok(()) }
+            Stmt::Block(block) => {
+                // Enter a new scope
+                let mut new_env = env.enter_scope();
+                block.generate_ir(&mut new_env)
             }
         }
     }

@@ -214,7 +214,7 @@ pub struct ROContext<'a> {
 }
 
 impl IRContext {
-    pub fn create_block(&mut self, name: Option<String>) {
+    pub fn create_block(&mut self, name: Option<String>) -> BasicBlock {
         let mut binding = self.program.borrow_mut();
         let func_data = binding.func_mut(self.current_func.unwrap());
         let bb = func_data.dfg_mut().new_bb().basic_block(name);
@@ -222,6 +222,7 @@ impl IRContext {
         func_data.layout_mut().bbs_mut().push_key_back(bb).unwrap();
         // Set the current block in Context
         self.current_bb = Some(bb);
+        bb
     }
 
     // This is created to avoid borrowing issues of disjoint fields in IRContext

@@ -75,6 +75,9 @@ pub enum VarDef {
 pub enum Stmt {
     Return(Expr),
     Assign(LVal, Expr),
+    Expr(Expr),
+    Empty,
+    Block(Block),
 }
 
 #[derive(Debug)]
