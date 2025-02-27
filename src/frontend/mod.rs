@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use koopa::ir::Program;
 use crate::frontend::ast::CompUnit;
 use crate::frontend::generate_ir::IRGenerator;
@@ -17,16 +19,8 @@ pub enum FrontendError {
     InvalidAssignmentToConst,
 }
 
-pub fn generate_ir(comp_unit: &CompUnit) -> Result<Program, FrontendError> {
-    let mut program = Program::new();
-    let ircontext = IRContext {
-        program: &mut program,
-        current_func: None,
-        current_bb: None,
-    };
-    comp_unit.generate_ir(&mut IREnvironment {
-        context: ircontext,
-        symbol_table: std::collections::HashMap::new(),
-    })?;
+pub fn generate_ir(comp_unit: &CompUnit) -> Result<Rc<RefCell<Program>>, FrontendError> {
+    let mut program = Rc::from(RefCell::from(Program::new()));
+    comp_unit.generate_ir(&mut IREnvironment::new(&program))?;
     Ok(program)
 }

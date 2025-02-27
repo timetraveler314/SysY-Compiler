@@ -23,7 +23,7 @@ fn main() -> std::io::Result<()> {
         Mode::Koopa => {
             let mut output = File::create(&output_file)?;
             let mut gen = KoopaGenerator::new(Vec::new());
-            gen.generate_on(&ir)?;
+            gen.generate_on(&*ir.borrow())?;
             let text_form_ir = std::str::from_utf8(&gen.writer()).unwrap().to_string();
             println!("Writing IR to file: {}", output_file);
             output.write_all(text_form_ir.as_bytes())?;
@@ -32,8 +32,9 @@ fn main() -> std::io::Result<()> {
             let mut asm_program = backend::asm::AsmProgram {
                 sections: Vec::new(),
             };
-            let mut env = AsmEnvironment::new(&ir);
-            ir.generate(&mut asm_program, &mut env);
+            let mut program = ir.borrow();
+            let mut env = AsmEnvironment::new(&*program);
+            (&*program).generate(&mut asm_program, &mut env);
 
             let mut riscv_output = File::create(output_file)?;
             println!("{:?}", asm_program);

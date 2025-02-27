@@ -1,14 +1,16 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
 use crate::frontend::ast::{Block, BlockItem, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
 use crate::frontend::FrontendError;
 use crate::common::environment::{IRContext, IREnvironment};
-use crate::frontend::symbol::SymbolTableEntry;
+use crate::frontend::symbol::{NestedSymbolTable, SymbolTableEntry};
 
 macro_rules! value_builder {
     ($env:expr) => {
-        $env.context.func_data_mut().dfg_mut().new_value()
+        $env.context.program.borrow_mut().func_mut($env.context.current_func.unwrap()).dfg_mut().new_value()
     };
 }
 
@@ -35,17 +37,10 @@ impl IRGenerator for FuncDef {
         let func_data = FunctionData::new(ir_func_name, Vec::new(), Type::get_i32());
 
         // Add the function to the program, and set the context's current function
-        let func = env.context.program.new_func(func_data);
+        let func = env.context.program.borrow_mut().new_func(func_data);
 
         // Recursively generate IR for the block
-        self.block.generate_ir(&mut IREnvironment {
-            context: IRContext {
-                program: env.context.program,
-                current_func: Some(func),
-                current_bb: None,
-            },
-            symbol_table: HashMap::new(),
-        })?;
+        self.block.generate_ir(&mut env.enter_func(func))?;
 
         Ok(())
     }
@@ -93,7 +88,7 @@ impl IRGenerator for Decl {
                             let eval_result = expr.try_const_eval(env)?;
 
                             // Eval success, add the constant to the symbol table
-                            env.symbol_table.insert(const_def.ident.clone(), SymbolTableEntry::Const(const_def.ident.clone(), eval_result));
+                            env.bind(&const_def.ident, SymbolTableEntry::Const(const_def.ident.clone(), eval_result))?;
                         }
                     }
                 }

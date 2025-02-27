@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
 use koopa::ir::entities::ValueData;
@@ -6,7 +8,7 @@ use crate::backend::instruction::Instruction;
 use crate::backend::register::{RVRegister, RVRegisterPool};
 use crate::frontend::ast::{LVal};
 use crate::frontend::FrontendError;
-use crate::frontend::symbol::SymbolTableEntry;
+use crate::frontend::symbol::{NestedSymbolTable, SymbolTableEntry};
 
 #[macro_export]
 macro_rules! get_func_from_context {
@@ -22,22 +24,65 @@ macro_rules! get_func_from_env {
     };
 }
 
-pub struct IREnvironment<'a> {
-    pub context: IRContext<'a>,
-    pub symbol_table: std::collections::HashMap<String, SymbolTableEntry>,
+pub struct IREnvironment {
+    pub context: IRContext,
+    symbol_table: Rc<RefCell<NestedSymbolTable>>,
 }
 
-impl<'a> IREnvironment<'a> {
+impl IREnvironment {
+    pub fn new(program: &Rc<RefCell<Program>>) -> Self {
+        IREnvironment {
+            context: IRContext {
+                program: program.clone(),
+                current_func: None,
+                current_bb: None,
+            },
+            symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new())),
+        }
+    }
+
+    pub fn enter_func(&self, func: Function) -> Self {
+        IREnvironment {
+            context: IRContext {
+                program: self.context.program.clone(),
+                current_func: Some(func),
+                current_bb: None,
+            },
+            // A new symbol table as a child of the current symbol table
+            symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
+        }
+    }
+
+    pub fn enter_bb(&self, bb: BasicBlock) -> Self {
+        assert!(self.context.current_func.is_some());
+
+        IREnvironment {
+            context: IRContext {
+                program: self.context.program.clone(),
+                current_func: self.context.current_func,
+                current_bb: Some(bb),
+            },
+            symbol_table: self.symbol_table.clone(),
+        }
+    }
+
+    pub fn enter_scope(&self) -> Self {
+        IREnvironment {
+            context: IRContext {
+                program: self.context.program.clone(),
+                current_func: self.context.current_func,
+                current_bb: self.context.current_bb,
+            },
+            symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
+        }
+    }
+
     pub fn lookup(&self, lval: &LVal) -> Option<SymbolTableEntry> {
-        self.symbol_table.get(lval.ident().into()).cloned()
+        self.symbol_table.borrow().lookup(lval.ident())
     }
 
     pub fn bind(&mut self, ident: &str, entry: SymbolTableEntry) -> Result<(), FrontendError> {
-        if self.symbol_table.contains_key(ident) {
-            return Err(FrontendError::MultipleDefinitionsForIdentifier(ident.into()));
-        }
-        self.symbol_table.insert(ident.into(), entry);
-        Ok(())
+        self.symbol_table.borrow_mut().bind(ident, entry)
     }
 }
 
@@ -156,8 +201,8 @@ impl<'a> AsmEnvironment<'a> {
     }
 }
 
-pub struct IRContext<'a> {
-    pub program: &'a mut Program,
+pub struct IRContext {
+    pub program: Rc<RefCell<Program>>,
     pub current_func: Option<Function>,
     pub current_bb: Option<BasicBlock>,
 }
@@ -168,13 +213,10 @@ pub struct ROContext<'a> {
     pub current_bb: Option<BasicBlock>,
 }
 
-impl<'a> IRContext<'a> {
-    pub fn func_data_mut(&mut self) -> &mut FunctionData {
-        self.program.func_mut(self.current_func.unwrap())
-    }
-
+impl IRContext {
     pub fn create_block(&mut self, name: Option<String>) {
-        let func_data = self.func_data_mut();
+        let mut binding = self.program.borrow_mut();
+        let func_data = binding.func_mut(self.current_func.unwrap());
         let bb = func_data.dfg_mut().new_bb().basic_block(name);
         // Add to the function's list of basic blocks
         func_data.layout_mut().bbs_mut().push_key_back(bb).unwrap();
@@ -184,7 +226,7 @@ impl<'a> IRContext<'a> {
 
     // This is created to avoid borrowing issues of disjoint fields in IRContext
     pub fn add_instruction(&mut self, inst: Value) {
-        self.program
+        self.program.borrow_mut()
             .func_mut(self.current_func.unwrap())
             .layout_mut()
             .bb_mut(self.current_bb.unwrap().clone())
