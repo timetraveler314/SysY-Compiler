@@ -2,13 +2,16 @@ mod frontend;
 mod backend;
 mod common;
 mod util;
+mod opt;
 
 use std::fs::File;
 use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
-use common::environment::{AsmEnvironment, ROContext};
+use common::environment::{AsmEnvironment};
 use crate::backend::generate_asm::GenerateAsm;
+use crate::opt::dead_code_elimination::DeadCodeEliminationPass;
+use crate::opt::OptPassFunction;
 
 lalrpop_mod!(sysy);
 
@@ -19,6 +22,13 @@ fn main() -> std::io::Result<()> {
     let ast = sysy::CompUnitParser::new().parse(&input).unwrap();
     println!("AST Dump: {:?}", ast);
     let ir = frontend::generate_ir(&ast).unwrap();
+
+    // IR Optimization pass
+    let mut dce = DeadCodeEliminationPass::new();
+    let func_layout = ir.borrow().func_layout().to_vec();
+    for func_h in func_layout {
+        dce.run_on(ir.borrow_mut().func_mut(func_h)).unwrap();
+    }
 
     match mode {
         Mode::Koopa => {

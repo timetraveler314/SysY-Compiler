@@ -1,12 +1,9 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
 use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
 use crate::frontend::ast::{Block, BlockItem, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
 use crate::frontend::FrontendError;
-use crate::common::environment::{IRContext, IREnvironment};
-use crate::frontend::symbol::{NestedSymbolTable, SymbolTableEntry};
+use crate::common::environment::{IREnvironment};
+use crate::frontend::symbol::{SymbolTableEntry};
 
 macro_rules! value_builder {
     ($env:expr) => {
@@ -168,6 +165,9 @@ impl IRGenerator for Stmt {
                 let mut new_env = env.enter_scope();
                 let result = block.generate_ir(&mut new_env);
 
+                // IMPORTANT: Exit the scope, updating outer scope's context
+                env.context = new_env.context;
+
                 result
             }
             Stmt::If(cond, then_stmt) => {
@@ -211,7 +211,7 @@ impl IRGenerator for Stmt {
                 // Generate IR for else block
                 let mut else_env = env.switch_bb(else_bb);
                 else_stmt.generate_ir(&mut else_env)?;
-                let else_jump = value_builder!(then_env).jump(merge_bb);
+                let else_jump = value_builder!(else_env).jump(merge_bb);
                 else_env.context.add_instruction(else_jump);
 
                 // Enter the merge block
