@@ -72,6 +72,21 @@ BType: BType = {
 }
 
 Stmt: Stmt = {
+    <open_stmt: OpenStmt> => open_stmt,
+    <closed_stmt: ClosedStmt> => closed_stmt,
+}
+
+OpenStmt: Stmt = {
+    "if" "(" <cond: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: OpenStmt> => Stmt::IfElse(cond, Box::new(then_stmt), Box::new(else_stmt)),
+    "if" "(" <cond: Exp> ")" <then_stmt: Stmt> => Stmt::If(cond, Box::new(then_stmt)),
+}
+
+ClosedStmt: Stmt = {
+    <non_if_stmt: NonIfStmt> => non_if_stmt,
+    "if" "(" <cond: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: ClosedStmt> => Stmt::IfElse(cond, Box::new(then_stmt), Box::new(else_stmt)),
+}
+
+NonIfStmt: Stmt = {
     "return" <expr: Exp> ";" => Stmt::Return(expr),
     <lv: LVal> "=" <expr: Exp> ";" => Stmt::Assign(lv, expr),
     <maybe_expr: Exp?> ";" => {

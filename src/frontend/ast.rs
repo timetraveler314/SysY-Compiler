@@ -78,6 +78,8 @@ pub enum Stmt {
     Expr(Expr),
     Empty,
     Block(Block),
+    If(Expr, Box<Stmt>),
+    IfElse(Expr, Box<Stmt>, Box<Stmt>),
 }
 
 #[derive(Debug)]

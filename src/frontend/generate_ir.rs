@@ -43,7 +43,8 @@ impl IRGenerator for FuncDef {
 
         let mut new_env = env.enter_func(func);
         // TODO: Currently only 1 bb, just mutate the env for the bb
-        let _entry_bb = new_env.context.create_block(Some("%entry".into()));
+        let entry_bb = new_env.context.create_block(Some("%entry".into()));
+        new_env.enter_bb(entry_bb);
         self.block.generate_ir(&mut new_env)?;
 
         Ok(())
@@ -165,7 +166,58 @@ impl IRGenerator for Stmt {
             Stmt::Block(block) => {
                 // Enter a new scope
                 let mut new_env = env.enter_scope();
-                block.generate_ir(&mut new_env)
+                let result = block.generate_ir(&mut new_env);
+
+                result
+            }
+            Stmt::If(cond, then_stmt) => {
+                let cond_val = cond.generate_ir(env)?;
+
+                let group = env.name_generator.borrow_mut().generate_group(&["%then", "%merge"]);
+                let then_bb = env.context.create_block(Some(group[0].clone()));
+                let merge_bb = env.context.create_block(Some(group[1].clone()));
+
+                let branch = value_builder!(env).branch(cond_val, then_bb, merge_bb);
+                env.context.add_instruction(branch);
+
+                // Generate IR for then block
+                let mut then_env = env.switch_bb(then_bb);
+                then_stmt.generate_ir(&mut then_env)?;
+                let then_jump = value_builder!(then_env).jump(merge_bb);
+                then_env.context.add_instruction(then_jump);
+
+                // Enter the merge block
+                env.enter_bb(merge_bb);
+
+                Ok(())
+            }
+            Stmt::IfElse(cond, then_stmt, else_stmt) => {
+                let cond_val = cond.generate_ir(env)?;
+
+                let group = env.name_generator.borrow_mut().generate_group(&["%then", "%else", "%merge"]);
+                let then_bb = env.context.create_block(Some(group[0].clone()));
+                let else_bb = env.context.create_block(Some(group[1].clone()));
+                let merge_bb = env.context.create_block(Some(group[2].clone()));
+
+                let branch = value_builder!(env).branch(cond_val, then_bb, else_bb);
+                env.context.add_instruction(branch);
+
+                // Generate IR for then block
+                let mut then_env = env.switch_bb(then_bb);
+                then_stmt.generate_ir(&mut then_env)?;
+                let then_jump = value_builder!(then_env).jump(merge_bb);
+                then_env.context.add_instruction(then_jump);
+
+                // Generate IR for else block
+                let mut else_env = env.switch_bb(else_bb);
+                else_stmt.generate_ir(&mut else_env)?;
+                let else_jump = value_builder!(then_env).jump(merge_bb);
+                else_env.context.add_instruction(else_jump);
+
+                // Enter the merge block
+                env.enter_bb(merge_bb);
+
+                Ok(())
             }
         }
     }

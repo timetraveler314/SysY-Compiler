@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use koopa::ir::builder::BasicBlockBuilder;
-use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value};
+use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value, ValueKind};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::AsmBasicBlock;
 use crate::backend::instruction::Instruction;
@@ -9,6 +9,7 @@ use crate::backend::register::{RVRegister, RVRegisterPool};
 use crate::frontend::ast::{LVal};
 use crate::frontend::FrontendError;
 use crate::frontend::symbol::{NestedSymbolTable, SymbolTableEntry};
+use crate::util::name_generator::NameGenerator;
 
 #[macro_export]
 macro_rules! get_func_from_context {
@@ -26,6 +27,7 @@ macro_rules! get_func_from_env {
 
 pub struct IREnvironment {
     pub context: IRContext,
+    pub name_generator: Rc<RefCell<NameGenerator>>,
     symbol_table: Rc<RefCell<NestedSymbolTable>>,
 }
 
@@ -37,6 +39,7 @@ impl IREnvironment {
                 current_func: None,
                 current_bb: None,
             },
+            name_generator: Rc::new(RefCell::from(NameGenerator::new())),
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new())),
         }
     }
@@ -48,12 +51,13 @@ impl IREnvironment {
                 current_func: Some(func),
                 current_bb: None,
             },
+            name_generator: self.name_generator.clone(),
             // A new symbol table as a child of the current symbol table
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
         }
     }
 
-    pub fn enter_bb(&self, bb: BasicBlock) -> Self {
+    pub fn switch_bb(&self, bb: BasicBlock) -> Self {
         assert!(self.context.current_func.is_some());
 
         IREnvironment {
@@ -62,8 +66,13 @@ impl IREnvironment {
                 current_func: self.context.current_func,
                 current_bb: Some(bb),
             },
+            name_generator: self.name_generator.clone(),
             symbol_table: self.symbol_table.clone(),
         }
+    }
+
+    pub fn enter_bb(&mut self, bb: BasicBlock) {
+        self.context.current_bb = Some(bb);
     }
 
     pub fn enter_scope(&self) -> Self {
@@ -73,6 +82,7 @@ impl IREnvironment {
                 current_func: self.context.current_func,
                 current_bb: self.context.current_bb,
             },
+            name_generator: self.name_generator.clone(),
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
         }
     }
@@ -220,8 +230,7 @@ impl IRContext {
         let bb = func_data.dfg_mut().new_bb().basic_block(name);
         // Add to the function's list of basic blocks
         func_data.layout_mut().bbs_mut().push_key_back(bb).unwrap();
-        // Set the current block in Context
-        self.current_bb = Some(bb);
+        // Do not set the current block in Context
         bb
     }
 
