@@ -219,6 +219,53 @@ impl IRGenerator for Stmt {
 
                 Ok(())
             }
+            Stmt::While(cond, stmt) => {
+                let group = env.name_generator.borrow_mut().generate_group(&["%entry", "%body", "%end"]);
+                let entry_bb = env.context.create_block(Some(group[0].clone()));
+                let body_bb = env.context.create_block(Some(group[1].clone()));
+                let end_bb = env.context.create_block(Some(group[2].clone()));
+
+                env.while_stack.push((entry_bb, end_bb));
+
+                let entry_jump = value_builder!(env).jump(entry_bb);
+                env.context.add_instruction(entry_jump);
+
+                // Generate IR for the entry block
+                let mut entry_env = env.switch_bb(entry_bb);
+                let cond_val = cond.generate_ir(&mut entry_env)?;
+                let branch = value_builder!(entry_env).branch(cond_val, body_bb, end_bb);
+                entry_env.context.add_instruction(branch);
+
+                // Generate IR for the body block
+                let mut body_env = entry_env.switch_bb(body_bb);
+                stmt.generate_ir(&mut body_env)?;
+                let body_jump = value_builder!(body_env).jump(entry_bb);
+                body_env.context.add_instruction(body_jump);
+
+                // Enter the end block, set the last_while in the context
+                env.enter_bb(end_bb);
+                env.while_stack.pop();
+
+                Ok(())
+            }
+            Stmt::Break => {
+                if let Some((_while_bb, end_bb)) = env.while_stack.last() {
+                    let jump = value_builder!(env).jump(*end_bb);
+                    env.context.add_instruction(jump);
+                    Ok(())
+                } else {
+                    Err(FrontendError::BreakOutsideOfLoop)
+                }
+            }
+            Stmt::Continue => {
+                if let Some((while_bb, _end_bb)) = env.while_stack.last() {
+                    let jump = value_builder!(env).jump(*while_bb);
+                    env.context.add_instruction(jump);
+                    Ok(())
+                } else {
+                    Err(FrontendError::ContinueOutsideOfLoop)
+                }
+            }
         }
     }
 }

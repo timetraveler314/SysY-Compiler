@@ -3,7 +3,7 @@ use std::rc::Rc;
 use koopa::ir::Program;
 use crate::frontend::ast::CompUnit;
 use crate::frontend::generate_ir::IRGenerator;
-use crate::common::environment::{IRContext, IREnvironment};
+use crate::common::environment::{IREnvironment};
 
 pub mod ast;
 pub mod symbol;
@@ -17,6 +17,8 @@ pub enum FrontendError {
     BindingNonConstExpr(String),
     ConstEvalDivZero,
     InvalidAssignmentToConst,
+    BreakOutsideOfLoop,
+    ContinueOutsideOfLoop,
 }
 
 pub fn generate_ir(comp_unit: &CompUnit) -> Result<Rc<RefCell<Program>>, FrontendError> {

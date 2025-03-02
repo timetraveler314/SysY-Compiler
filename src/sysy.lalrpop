@@ -79,11 +79,13 @@ Stmt: Stmt = {
 OpenStmt: Stmt = {
     "if" "(" <cond: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: OpenStmt> => Stmt::IfElse(cond, Box::new(then_stmt), Box::new(else_stmt)),
     "if" "(" <cond: Exp> ")" <then_stmt: Stmt> => Stmt::If(cond, Box::new(then_stmt)),
+    "while" "(" <cond: Exp> ")" <body: OpenStmt> => Stmt::While(cond, Box::new(body)),
 }
 
 ClosedStmt: Stmt = {
     <non_if_stmt: NonIfStmt> => non_if_stmt,
     "if" "(" <cond: Exp> ")" <then_stmt: ClosedStmt> "else" <else_stmt: ClosedStmt> => Stmt::IfElse(cond, Box::new(then_stmt), Box::new(else_stmt)),
+    "while" "(" <cond: Exp> ")" <body: ClosedStmt> => Stmt::While(cond, Box::new(body)),
 }
 
 NonIfStmt: Stmt = {
@@ -96,6 +98,8 @@ NonIfStmt: Stmt = {
         }
     },
     <block: Block> => Stmt::Block(block),
+    "break" ";" => Stmt::Break,
+    "continue" ";" => Stmt::Continue,
 }
 
 // Exp ::= LOrExp; At Lv 3.3

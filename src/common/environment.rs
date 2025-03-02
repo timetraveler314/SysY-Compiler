@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 use koopa::ir::builder::BasicBlockBuilder;
-use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value, ValueKind};
+use koopa::ir::{BasicBlock, Function, Program, Value};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::AsmBasicBlock;
 use crate::backend::instruction::Instruction;
@@ -30,6 +30,7 @@ macro_rules! get_func_from_env {
 pub struct IREnvironment {
     pub context: IRContext,
     pub name_generator: Rc<RefCell<NameGenerator>>,
+    pub while_stack: Vec<(BasicBlock, BasicBlock)>,
     symbol_table: Rc<RefCell<NestedSymbolTable>>,
 }
 
@@ -42,6 +43,7 @@ impl IREnvironment {
                 current_bb: None,
             },
             name_generator: Rc::new(RefCell::from(NameGenerator::new())),
+            while_stack: Vec::new(),
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new())),
         }
     }
@@ -54,6 +56,7 @@ impl IREnvironment {
                 current_bb: None,
             },
             name_generator: self.name_generator.clone(),
+            while_stack: Vec::new(),
             // A new symbol table as a child of the current symbol table
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
         }
@@ -69,6 +72,7 @@ impl IREnvironment {
                 current_bb: Some(bb),
             },
             name_generator: self.name_generator.clone(),
+            while_stack: self.while_stack.clone(),
             symbol_table: self.symbol_table.clone(),
         }
     }
@@ -85,6 +89,7 @@ impl IREnvironment {
                 current_bb: self.context.current_bb,
             },
             name_generator: self.name_generator.clone(),
+            while_stack: self.while_stack.clone(),
             symbol_table: Rc::new(RefCell::new(NestedSymbolTable::new_child(self.symbol_table.clone()))),
         }
     }
@@ -179,7 +184,7 @@ impl<'a> AsmEnvironment<'a> {
     pub fn store_data(&mut self, target: &mut AsmBasicBlock, value: &ValueData, register: Option<RVRegister>) {
         match self.presence_table.get_mut(&(value as *const ValueData)) {
             Some(storage) => match storage {
-                ValueStorage::Register(reg_prev) => unimplemented!(),
+                ValueStorage::Register(_reg_prev) => unimplemented!(),
                 ValueStorage::Stack(offset) => {
                     // Store from register to stack
                     let register = register.unwrap();
