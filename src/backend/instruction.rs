@@ -19,6 +19,9 @@ pub enum Instruction {
     Sgt { rd: RVRegister, rs1: RVRegister, rs2: RVRegister },
     Seqz { rd: RVRegister, rs: RVRegister },
     Snez { rd: RVRegister, rs: RVRegister },
+    // Branch instructions
+    Bnez { rs: RVRegister, label: String },
+    J { label: String },
     Ret,
 }
 
@@ -43,6 +46,8 @@ impl std::fmt::Display for Instruction {
             Instruction::Sgt { rd, rs1, rs2 } => write!(f, "sgt {}, {}, {}", rd, rs1, rs2),
             Instruction::Seqz { rd, rs } => write!(f, "seqz {}, {}", rd, rs),
             Instruction::Snez { rd, rs } => write!(f, "snez {}, {}", rd, rs),
+            Instruction::Bnez { rs, label } => write!(f, "bnez {}, {}", rs, label),
+            Instruction::J { label } => write!(f, "j {}", label),
             Instruction::Ret => write!(f, "ret"),
         }
     }

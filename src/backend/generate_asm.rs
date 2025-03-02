@@ -3,7 +3,7 @@ use crate::backend::register::RVRegister::A0;
 use crate::common::environment::{AsmEnvironment, FunctionPrologueInfo, ROContext, ValueStorage};
 use koopa::ir::{BinaryOp, FunctionData, Program, ValueKind};
 use koopa::ir::entities::ValueData;
-use crate::backend::asm::AsmBasicBlock;
+use crate::backend::asm::{AsmBasicBlock, AsmFunction};
 use crate::backend::register::{RVRegister, RVRegisterPool};
 use crate::get_func_from_env;
 
@@ -22,7 +22,7 @@ pub trait ValueGenerateAsm {
 impl GenerateAsm for Program {
     type Target = crate::backend::asm::AsmProgram;
 
-    fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, _env: &mut AsmEnvironment<'b>) {
+    fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, env: &mut AsmEnvironment<'b>) {
         let mut text_section = crate::backend::asm::AsmSection {
             section_type: crate::backend::asm::AsmSectionType::Text,
             label: "main".to_string(),
@@ -31,18 +31,23 @@ impl GenerateAsm for Program {
 
         // Traverse the functions
         for &func_h in self.func_layout() {
-            self.func(func_h).generate(&mut text_section, &mut AsmEnvironment {
+            let mut asm_func = AsmFunction::new(&self.func(func_h).name()[1..]);
+            self.func(func_h).generate(&mut asm_func, &mut AsmEnvironment {
                 context: ROContext {
                     program: self,
                     current_func: Some(func_h),
                     current_bb: None,
                 },
                 presence_table: std::collections::HashMap::new(),
-                function_prologue_info: crate::common::environment::FunctionPrologueInfo {
+                function_prologue_info: FunctionPrologueInfo {
                     stack_size: 0,
                 },
                 register_pool: RVRegisterPool::new_temp_pool(),
+                name_map: std::collections::HashMap::new(),
+                name_generator: env.name_generator.clone(),
             });
+
+            text_section.content.push(asm_func);
         }
 
         target.sections.push(text_section);
@@ -51,55 +56,52 @@ impl GenerateAsm for Program {
 
 impl GenerateAsm for FunctionData {
     // Function will generate on sections, appending to the list of basic blocks
-    type Target = crate::backend::asm::AsmSection;
+    type Target = AsmFunction;
 
     fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, env: &mut AsmEnvironment<'b>) {
         let mut prologue_info = FunctionPrologueInfo { stack_size: 0 };
 
         // Traverse the basic blocks and corresponding instructions
-        for (&bb_h, node) in self.layout().bbs() {
-            let mut bb = AsmBasicBlock::new(&self.name()[1..]);
+        for (i, (&bb_h, node)) in self.layout().bbs().iter().enumerate() {
+            let mut bb = AsmBasicBlock::new(env.lookup_name(&bb_h).as_str());
 
-            let mut new_env = AsmEnvironment {
-                context: ROContext {
-                    program: env.context.program,
-                    current_func: env.context.current_func,
-                    current_bb: Some(bb_h),
-                },
-                presence_table: env.presence_table.clone(),
-                function_prologue_info: env.function_prologue_info.clone(),
-                register_pool: env.register_pool.clone(),
-            };
+            // The entry basic block is the first one
+            if i == 0 {
+                bb.label = Some(self.name()[1..].to_string());
+                bb.is_entry = true;
+            }
+
+            env.enter_bb(bb_h);
 
             // Inside a basic block
             for &inst_h in node.insts().keys() {
                 let value_data = self.dfg().value(inst_h);
                 // Access the instruction, updating environment to basic block level
-                println!("Generating value: {:?}", value_data);
-                value_data.generate_value(&mut bb, &mut new_env);
-
-                prologue_info = new_env.function_prologue_info.clone();
+                value_data.generate_value(&mut bb, env);
             }
 
-            let aligned_stack_size = prologue_info.stack_size + (16 - prologue_info.stack_size % 16);
-            bb.prologue.extend(vec![
-                Instruction::Addi {
-                    rd: RVRegister::Sp,
-                    rs: RVRegister::Sp,
-                    imm: -aligned_stack_size,
-                },
-            ]);
-            bb.epilogue.extend(vec![
-                Instruction::Addi {
-                    rd: RVRegister::Sp,
-                    rs: RVRegister::Sp,
-                    imm: aligned_stack_size,
-                },
-                Instruction::Ret,
-            ]);
+            // Prologue and epilogue
+            prologue_info = env.function_prologue_info.clone();
 
-            target.content.push(bb);
+            target.basic_blocks.push(bb);
         }
+
+        let aligned_stack_size = prologue_info.stack_size + (16 - prologue_info.stack_size % 16);
+        target.prologue.extend(vec![
+            Instruction::Addi {
+                rd: RVRegister::Sp,
+                rs: RVRegister::Sp,
+                imm: -aligned_stack_size,
+            },
+        ]);
+        target.epilogue.extend(vec![
+            Instruction::Addi {
+                rd: RVRegister::Sp,
+                rs: RVRegister::Sp,
+                imm: aligned_stack_size,
+            },
+            Instruction::Ret,
+        ]);
     }
 }
 
@@ -128,6 +130,8 @@ impl ValueGenerateAsm for ValueData {
                     rd: A0,
                     rs
                 });
+
+                target.is_exit = true;
             }
             ValueKind::Binary(bin) => {
                 // HAS return, allocate stack space
@@ -196,6 +200,26 @@ impl ValueGenerateAsm for ValueData {
 
                 let src = env.load_data(target, src_value_data);
                 env.store_data(target, func_data.dfg().value(store.dest()), Some(src));
+            }
+            ValueKind::Branch(branch) => {
+                let cond_value_data = func_data.dfg().value(branch.cond());
+                cond_value_data.generate_value(target, env);
+
+                let rs = env.load_data(target, cond_value_data);
+                target.instructions.push(Instruction::Bnez {
+                    rs,
+                    label: env.lookup_name(&branch.true_bb()).to_string(),
+                });
+                target.instructions.push(Instruction::J {
+                    label: env.lookup_name(&branch.false_bb()).to_string(),
+                });
+
+                env.free_register(rs);
+            }
+            ValueKind::Jump(jump) => {
+                target.instructions.push(Instruction::J {
+                    label: env.lookup_name(&jump.target()).to_string(),
+                });
             }
             _ => unreachable!(),
         }

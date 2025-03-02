@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::rc::Rc;
 use koopa::ir::builder::BasicBlockBuilder;
 use koopa::ir::{BasicBlock, Function, FunctionData, Program, Value, ValueKind};
@@ -114,6 +116,8 @@ pub struct AsmEnvironment<'a> {
     pub presence_table: std::collections::HashMap<*const ValueData, ValueStorage>,
     pub function_prologue_info: FunctionPrologueInfo,
     pub(crate) register_pool: RVRegisterPool,
+    pub(crate) name_generator: Rc<RefCell<NameGenerator>>,
+    pub(crate) name_map: HashMap<BasicBlock, String>,
 }
 
 impl<'a> AsmEnvironment<'a> {
@@ -126,8 +130,14 @@ impl<'a> AsmEnvironment<'a> {
             },
             presence_table: std::collections::HashMap::new(),
             function_prologue_info: FunctionPrologueInfo { stack_size: 0 },
-            register_pool: RVRegisterPool::new_temp_pool()
+            register_pool: RVRegisterPool::new_temp_pool(),
+            name_generator: Rc::new(RefCell::from(NameGenerator::new())),
+            name_map: HashMap::new(),
         }
+    }
+
+    pub fn enter_bb(&mut self, bb: BasicBlock) {
+        self.context.current_bb = Some(bb);
     }
 
     pub fn is_present(&self, value: &ValueData) -> bool {
@@ -208,6 +218,22 @@ impl<'a> AsmEnvironment<'a> {
     pub fn free_register(&mut self, register: RVRegister) {
         println!("Freeing register {:?}", register);
         self.register_pool.release(register);
+    }
+
+    pub fn lookup_name(&mut self, bb: &BasicBlock) -> String {
+        match self.name_map.get(bb) {
+            Some(name) => name.clone(),
+            None => {
+                // Generate a new name
+                let name = self.name_generator.borrow_mut().generate("func_");
+                self.bind_name(bb, name.clone());
+                name
+            }
+        }
+    }
+
+    pub fn bind_name(&mut self, bb: &BasicBlock, name: String) {
+        self.name_map.insert(bb.clone(), name);
     }
 }
 

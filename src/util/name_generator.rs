@@ -19,4 +19,10 @@ impl NameGenerator {
         self.counter += 1;
         group
     }
+
+    pub fn generate(&mut self, prefix: &str) -> String {
+        let name = format!("{}{}", prefix, self.counter);
+        self.counter += 1;
+        name
+    }
 }
