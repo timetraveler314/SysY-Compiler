@@ -283,27 +283,95 @@ impl IRGenerator for Expr {
             Expr::Eq(lhs, rhs) => generate_binary_expr!(env, lhs, rhs, Eq),
             Expr::Ne(lhs, rhs) => generate_binary_expr!(env, lhs, rhs, NotEq),
             Expr::Land(lhs, rhs) => {
-                let lhs_val = lhs.generate_ir(env)?;
-                let rhs_val = rhs.generate_ir(env)?;
-                let zero = value_builder!(env).integer(0);
-                let lhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
-                let rhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, rhs_val, zero);
-                let op = value_builder!(env).binary(BinaryOp::And, lhs_neq_z, rhs_neq_z);
-                env.context.add_instruction(lhs_neq_z);
-                env.context.add_instruction(rhs_neq_z);
-                env.context.add_instruction(op);
-                Ok(op)
+                if self.has_side_effect() {
+                    let result = value_builder!(env).alloc(Type::get_i32());
+                    env.context.add_instruction(result);
+                    let zero_result_init = value_builder!(env).integer(0);
+                    let result_init = value_builder!(env).store(zero_result_init, result);
+                    env.context.add_instruction(result_init);
+
+                    let lhs_val = lhs.generate_ir(env)?;
+                    let zero = value_builder!(env).integer(0);
+                    let lhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
+                    env.context.add_instruction(lhs_neq_z);
+
+                    let bb_branch = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_and_branch")));
+                    let bb_merge = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_and_merge")));
+
+                    let branch = value_builder!(env).branch(lhs_neq_z, bb_branch, bb_merge);
+                    env.context.add_instruction(branch);
+
+                    let mut branch_env = env.switch_bb(bb_branch);
+                    let rhs_val = rhs.generate_ir(&mut branch_env)?;
+                    let zero_branch = value_builder!(branch_env).integer(0);
+                    let rhs_neq_z = value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
+                    branch_env.context.add_instruction(rhs_neq_z);
+                    let result_assign = value_builder!(branch_env).store(rhs_neq_z, result);
+                    branch_env.context.add_instruction(result_assign);
+                    let branch_jump = value_builder!(branch_env).jump(bb_merge);
+                    branch_env.context.add_instruction(branch_jump);
+
+                    env.enter_bb(bb_merge);
+                    let result_load = value_builder!(env).load(result);
+                    env.context.add_instruction(result_load);
+                    Ok(result_load)
+                } else {
+                    let lhs_val = lhs.generate_ir(env)?;
+                    let rhs_val = rhs.generate_ir(env)?;
+                    let zero = value_builder!(env).integer(0);
+                    let lhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
+                    let rhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, rhs_val, zero);
+                    let op = value_builder!(env).binary(BinaryOp::And, lhs_neq_z, rhs_neq_z);
+                    env.context.add_instruction(lhs_neq_z);
+                    env.context.add_instruction(rhs_neq_z);
+                    env.context.add_instruction(op);
+                    Ok(op)
+                }
             }
             Expr::Lor(lhs, rhs) => {
-                let lhs_val = lhs.generate_ir(env)?;
-                let rhs_val = rhs.generate_ir(env)?;
-                let zero = value_builder!(env).integer(0);
-                let op = value_builder!(env).binary(BinaryOp::Or, lhs_val, rhs_val);
-                let snez = value_builder!(env).binary(BinaryOp::NotEq, op, zero);
-                env.context.add_instruction(op);
-                env.context.add_instruction(snez);
-                Ok(snez)
-            }
+                if self.has_side_effect() {
+                    let result = value_builder!(env).alloc(Type::get_i32());
+                    env.context.add_instruction(result);
+                    let one_result_init = value_builder!(env).integer(1);
+                    let result_init = value_builder!(env).store(one_result_init, result);
+                    env.context.add_instruction(result_init);
+
+                    let lhs_val = lhs.generate_ir(env)?;
+                    let zero = value_builder!(env).integer(0);
+                    let lhs_eq_z = value_builder!(env).binary(BinaryOp::Eq, lhs_val, zero);
+                    env.context.add_instruction(lhs_eq_z);
+
+                    let bb_branch = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_or_branch")));
+                    let bb_merge = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_or_merge")));
+
+                    let branch = value_builder!(env).branch(lhs_eq_z, bb_branch, bb_merge);
+                    env.context.add_instruction(branch);
+
+                    let mut branch_env = env.switch_bb(bb_branch);
+                    let rhs_val = rhs.generate_ir(&mut branch_env)?;
+                    let zero_branch = value_builder!(branch_env).integer(0);
+                    let rhs_neq_z = value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
+                    branch_env.context.add_instruction(rhs_neq_z);
+                    let result_assign = value_builder!(branch_env).store(rhs_neq_z, result);
+                    branch_env.context.add_instruction(result_assign);
+                    let branch_jump = value_builder!(branch_env).jump(bb_merge);
+                    branch_env.context.add_instruction(branch_jump);
+
+                    env.enter_bb(bb_merge);
+                    let result_load = value_builder!(env).load(result);
+                    env.context.add_instruction(result_load);
+                    Ok(result_load)
+                } else {
+                    let lhs_val = lhs.generate_ir(env)?;
+                    let rhs_val = rhs.generate_ir(env)?;
+                    let zero = value_builder!(env).integer(0);
+                    let op = value_builder!(env).binary(BinaryOp::Or, lhs_val, rhs_val);
+                    let snez = value_builder!(env).binary(BinaryOp::NotEq, op, zero);
+                    env.context.add_instruction(op);
+                    env.context.add_instruction(snez);
+                    Ok(snez)
+                }
         }
     }
+}
 }

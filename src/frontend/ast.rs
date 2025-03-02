@@ -133,6 +133,29 @@ macro_rules! binary_expr_eval_rule {
 }
 
 impl Expr {
+    pub fn has_side_effect(&self) -> bool {
+        match self {
+            Expr::Num(_) => false,
+            Expr::LVal(_) => false,
+            Expr::Pos(sub) => sub.has_side_effect(),
+            Expr::Neg(sub) => sub.has_side_effect(),
+            Expr::Not(sub) => sub.has_side_effect(),
+            Expr::Add(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Sub(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Mul(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Div(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Mod(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Lt(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Gt(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Le(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Ge(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Eq(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Ne(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Land(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+            Expr::Lor(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
+        }    
+    }
+    
     pub fn try_const_eval(&self, env: &IREnvironment) -> Result<i32, FrontendError> {
         match self {
             Expr::Num(num) => Ok(*num),
