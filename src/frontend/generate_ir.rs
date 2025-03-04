@@ -20,7 +20,10 @@ impl IRGenerator for CompUnit {
     type Output = ();
 
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
-        self.func_def.generate_ir(env)?;
+        // Traverse all the functions
+        for func_def in self.functions.iter() {
+            func_def.generate_ir(env)?;
+        }
         Ok(())
     }
 }
@@ -31,10 +34,26 @@ impl IRGenerator for FuncDef {
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
         // name -> @ + name
         let ir_func_name = format!("@{}", self.ident);
-        let func_data = FunctionData::new(ir_func_name, Vec::new(), Type::get_i32());
+        let mut param_types = Vec::new();
+        for param in self.params.iter() {
+            param_types.push(param.btype.to());
+        }
+        let func_data = FunctionData::new(ir_func_name, param_types, self.func_type.to());
+        // Zip the `FuncData` with the parameters
+        let mut param_args = Vec::new();
+        for (param, arg) in self.params.iter().zip(func_data.params()) {
+            param_args.push((param.clone(), arg.clone()));
+        }
 
         // Add the function to the program, and set the context's current function
         let func = env.context.program.borrow_mut().new_func(func_data);
+
+        // Register the function in the symbol table
+        env.bind(&self.ident, SymbolTableEntry::Func {
+            handle: func,
+            ret_type: self.func_type.to(),
+            params: self.params.iter().map(|param| (param.ident.clone(), param.btype.to())).collect()
+        })?;
 
         // Recursively generate IR for the block
 
@@ -42,7 +61,26 @@ impl IRGenerator for FuncDef {
         // TODO: Currently only 1 bb, just mutate the env for the bb
         let entry_bb = new_env.context.create_block(Some("%entry".into()));
         new_env.enter_bb(entry_bb);
+
+        // Bind the arguments to symbol table
+        for (param, arg) in param_args.iter() {
+            // Here we allocate a new value for the argument, TODO why
+            let var = value_builder!(new_env).alloc(param.btype.to());
+            new_env.context.add_instruction(var);
+            // Store to var
+            let store = value_builder!(new_env).store(arg.clone(), var);
+            new_env.context.add_instruction(store);
+            new_env.bind(&param.ident, SymbolTableEntry::Var(var))?;
+        }
+
+        // Arguments are already bound to the symbol table, generate IR for the block
         self.block.generate_ir(&mut new_env)?;
+
+        // Void return
+        if self.func_type.to() == Type::get_unit() {
+            let ret = value_builder!(new_env).ret(None);
+            new_env.context.add_instruction(ret);
+        }
 
         Ok(())
     }
@@ -139,7 +177,7 @@ impl IRGenerator for Stmt {
                     LVal::Ident(ident) => {
                         // Assign the value
                         let val = expr.generate_ir(env)?;
-                        if let Some(entry) = env.lookup(lval) {
+                        if let Some(entry) = env.lookup_lval(lval) {
                             match entry {
                                 SymbolTableEntry::Var(var) => {
                                     let store = value_builder!(env).store(val, var);
@@ -287,7 +325,7 @@ impl IRGenerator for Expr {
         match self {
             Expr::Num(num) => Ok(value_builder!(env).integer(*num)),
             Expr::LVal(lval) => {
-                match env.lookup(lval) {
+                match env.lookup_lval(lval) {
                     None => Err(FrontendError::DefinitionNotFoundForIdentifier(lval.ident().into())),
                     Some(entry) => {
                         match entry {
@@ -297,6 +335,7 @@ impl IRGenerator for Expr {
                                 env.context.add_instruction(load);
                                 Ok(load)
                             }
+                            SymbolTableEntry::Func { .. } => Err(FrontendError::InvalidFunctionCall),
                         }
                     }
                 }
@@ -418,7 +457,31 @@ impl IRGenerator for Expr {
                     env.context.add_instruction(snez);
                     Ok(snez)
                 }
+            }
+            Expr::Call(ident, args) => {
+                // Lookup the function binding
+                match env.lookup_ident(ident) {
+                    None => Err(FrontendError::DefinitionNotFoundForIdentifier(ident.clone())),
+                    Some(entry) => {
+                        match entry {
+                            SymbolTableEntry::Func { handle, ret_type, params } => {
+                                // Generate IR for the arguments
+                                let mut arg_vals = Vec::new();
+                                for arg in args.iter() {
+                                    let cur_arg = arg.generate_ir(env)?;
+                                    arg_vals.push(cur_arg);
+                                }
+
+                                // Call the function
+                                let call = value_builder!(env).call(handle, arg_vals);
+                                env.context.add_instruction(call);
+                                Ok(call)
+                            }
+                            _ => Err(FrontendError::InvalidFunctionCall),
+                        }
+                    }
+                }
+            }
         }
-    }
 }
 }

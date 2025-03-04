@@ -1,13 +1,16 @@
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
-use koopa::ir::Value;
+use std::collections::HashMap;
+use std::rc::{Rc};
+use koopa::ir::{Function, Type, Value};
 use crate::frontend::FrontendError;
 
 #[derive(Clone)]
 pub enum SymbolTableEntry {
     Const(String, i32),
     Var(Value),
+    Func { handle: Function, ret_type: Type, params: Vec<(String, Type)> },
 }
+
 
 type SymbolTable = Rc<RefCell<NestedSymbolTable>>;
 

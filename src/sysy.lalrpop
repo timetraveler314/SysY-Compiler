@@ -19,13 +19,26 @@ Comma<T>: Vec<T> = {
 }
 
 // Syntax
-pub CompUnit: CompUnit = <func_def: FuncDef> => CompUnit { <> };
+pub CompUnit: CompUnit = <functions: FuncDef+> => CompUnit { <> };
 
 FuncDef: FuncDef = {
-    <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => FuncDef { <> }
+    <func_type: FuncType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => FuncDef { <> }
 }
 
-FuncType: FuncType = "int" => FuncType::Int;
+FuncType: FuncType = {
+    "int" => FuncType::Int,
+    "void" => FuncType::Void,
+}
+
+FuncFParams: Vec<FuncFParam> = {
+    <params: Comma<FuncFParam>?> => {
+        params.unwrap_or_else(|| vec![])
+    }
+}
+
+FuncFParam: FuncFParam = {
+    <btype: BType> <ident: Ident> => FuncFParam { <> }
+}
 
 Block: Block = "{" <items: BlockItem*> "}" => Block { <> };
 
@@ -122,6 +135,13 @@ UnaryExp: Expr = {
     "+" <unary: UnaryExp> => Expr::Pos(Box::new(unary)),
     "-" <unary: UnaryExp> => Expr::Neg(Box::new(unary)),
     "!" <unary: UnaryExp> => Expr::Not(Box::new(unary)),
+    <ident: Ident> "(" <args: FuncRParams> ")" => Expr::Call(ident, args),
+}
+
+FuncRParams: Vec<Expr> = {
+    <params: Comma<Exp>?> => {
+        params.unwrap_or_else(|| vec![])
+    }
 }
 
 // MulExp ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;

@@ -94,8 +94,12 @@ impl IREnvironment {
         }
     }
 
-    pub fn lookup(&self, lval: &LVal) -> Option<SymbolTableEntry> {
-        self.symbol_table.borrow().lookup(lval.ident())
+    pub fn lookup_lval(&self, lval: &LVal) -> Option<SymbolTableEntry> {
+        self.lookup_ident(lval.ident())
+    }
+
+    pub fn lookup_ident(&self, ident: &str) -> Option<SymbolTableEntry> {
+        self.symbol_table.borrow().lookup(ident)
     }
 
     pub fn bind(&mut self, ident: &str, entry: SymbolTableEntry) -> Result<(), FrontendError> {

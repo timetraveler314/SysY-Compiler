@@ -1,3 +1,4 @@
+use koopa::ir::Type;
 use crate::common::environment::{IREnvironment};
 use crate::frontend::FrontendError;
 use crate::frontend::FrontendError::{BindingNonConstExpr, ConstEvalDivZero};
@@ -5,24 +6,49 @@ use crate::frontend::symbol::SymbolTableEntry;
 
 #[derive(Debug)]
 pub struct CompUnit {
-    pub func_def: FuncDef,
+    pub functions: Vec<FuncDef>,
 }
 
 #[derive(Debug)]
 pub struct FuncDef {
     pub func_type: FuncType,
     pub ident: String,
+    pub params: Vec<FuncFParam>,
     pub block: Block,
 }
 
 #[derive(Debug)]
 pub enum FuncType {
     Int,
+    Void,
 }
 
-#[derive(Debug)]
+impl FuncType {
+    pub fn to(&self) -> Type {
+        match self {
+            FuncType::Int => Type::get_i32(),
+            FuncType::Void => Type::get_unit(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum BType {
     Int,
+}
+
+impl BType {
+    pub fn to(&self) -> Type {
+        match self {
+            BType::Int => Type::get_i32(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FuncFParam {
+    pub btype: BType,
+    pub ident: String,
 }
 
 #[derive(Debug)]
@@ -124,6 +150,7 @@ pub enum Expr {
     Ne(Box<Expr>, Box<Expr>),
     Land(Box<Expr>, Box<Expr>),
     Lor(Box<Expr>, Box<Expr>),
+    Call(String, Vec<Expr>),
 }
 
 // macro rule for binary
@@ -156,19 +183,20 @@ impl Expr {
             Expr::Ne(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
             Expr::Land(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
             Expr::Lor(lhs, rhs) => lhs.has_side_effect() || rhs.has_side_effect(),
-        }    
+            Expr::Call(_, _) => true,
+        }
     }
     
     pub fn try_const_eval(&self, env: &IREnvironment) -> Result<i32, FrontendError> {
         match self {
             Expr::Num(num) => Ok(*num),
             Expr::LVal(lval) => {
-                match env.lookup(lval) {
+                match env.lookup_lval(lval) {
                     None => Err(BindingNonConstExpr(lval.ident().into())),
                     Some(entry) => {
                         match entry {
                             SymbolTableEntry::Const(_, num) => Ok(num),
-                            SymbolTableEntry::Var(_) => Err(BindingNonConstExpr(lval.ident().into())),
+                            _ => Err(BindingNonConstExpr(lval.ident().into())),
                         }
                     }
                 }
@@ -203,6 +231,7 @@ impl Expr {
             Expr::Ne(lhs, rhs) => binary_expr_eval_rule!(env, lhs, rhs, |lhs, rhs| if lhs != rhs { 1 } else { 0 }),
             Expr::Land(lhs, rhs) => binary_expr_eval_rule!(env, lhs, rhs, |lhs, rhs| if lhs != 0 && rhs != 0 { 1 } else { 0 }),
             Expr::Lor(lhs, rhs) => binary_expr_eval_rule!(env, lhs, rhs, |lhs, rhs| if lhs != 0 || rhs != 0 { 1 } else { 0 }),
+            Expr::Call(ident, _) => Err(BindingNonConstExpr(ident.into())),
         }
     }
 }
