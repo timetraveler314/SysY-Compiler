@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 use koopa::ir::builder::BasicBlockBuilder;
-use koopa::ir::{BasicBlock, Function, Program, Value};
+use koopa::ir::{BasicBlock, Function, FunctionData, Program, Type, Value};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::AsmBasicBlock;
 use crate::backend::instruction::Instruction;
@@ -104,6 +104,17 @@ impl IREnvironment {
 
     pub fn bind(&mut self, ident: &str, entry: SymbolTableEntry) -> Result<(), FrontendError> {
         self.symbol_table.borrow_mut().bind(ident, entry)
+    }
+
+    pub fn generate_decl(&mut self, name: &str, params_ty: Vec<Type>, ret_ty: Type) -> Result<(), FrontendError> {
+        let function = self.context.program.borrow_mut().new_func(FunctionData::new_decl(name.to_string(), params_ty.clone(), ret_ty.clone()));
+        // Add to symbol table
+        self.bind(&*name[1..].to_string(), SymbolTableEntry::Func {
+            handle: function,
+            params: params_ty.iter().zip(0..).map(|(ty, i)| (format!("_arg{}", i), ty.clone())).collect(),
+            ret_type: ret_ty
+        })?;
+        Ok(())
     }
 }
 

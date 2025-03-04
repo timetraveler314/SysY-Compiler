@@ -20,6 +20,16 @@ impl IRGenerator for CompUnit {
     type Output = ();
 
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
+        // Declaration for library functions
+        env.generate_decl("@getint", Vec::new(), Type::get_i32())?;
+        env.generate_decl("@getch", Vec::new(), Type::get_i32())?;
+        env.generate_decl("@getarray", vec![Type::get_pointer(Type::get_i32())], Type::get_i32())?;
+        env.generate_decl("@putint", vec![Type::get_i32()], Type::get_unit())?;
+        env.generate_decl("@putch", vec![Type::get_i32()], Type::get_unit())?;
+        env.generate_decl("@putarray", vec![Type::get_i32(), Type::get_pointer(Type::get_i32())], Type::get_unit())?;
+        env.generate_decl("@starttime", Vec::new(), Type::get_unit())?;
+        env.generate_decl("@stoptime", Vec::new(), Type::get_unit())?;
+
         // Traverse all the functions
         for func_def in self.functions.iter() {
             func_def.generate_ir(env)?;
@@ -464,7 +474,7 @@ impl IRGenerator for Expr {
                     None => Err(FrontendError::DefinitionNotFoundForIdentifier(ident.clone())),
                     Some(entry) => {
                         match entry {
-                            SymbolTableEntry::Func { handle, ret_type, params } => {
+                            SymbolTableEntry::Func { handle, .. } => {
                                 // Generate IR for the arguments
                                 let mut arg_vals = Vec::new();
                                 for arg in args.iter() {
