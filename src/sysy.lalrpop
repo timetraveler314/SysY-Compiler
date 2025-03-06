@@ -19,15 +19,20 @@ Comma<T>: Vec<T> = {
 }
 
 // Syntax
-pub CompUnit: CompUnit = <functions: FuncDef+> => CompUnit { <> };
+pub CompUnit: CompUnit = <elements: CompElement+> => CompUnit { <> };
+
+CompElement: CompElement = {
+    <decl: Decl> => CompElement::Decl(decl),
+    <func_def: FuncDef> => CompElement::FuncDef(func_def),
+}
 
 FuncDef: FuncDef = {
     <func_type: FuncType> <ident: Ident> "(" <params: FuncFParams> ")" <block: Block> => FuncDef { <> }
 }
 
 FuncType: FuncType = {
-    "int" => FuncType::Int,
     "void" => FuncType::Void,
+    <btype: BType> => FuncType::from_btype(btype),
 }
 
 FuncFParams: Vec<FuncFParam> = {
@@ -68,7 +73,10 @@ ConstInitVal: ConstInitVal = {
 }
 
 VarDecl: VarDecl = {
-    <btype: BType> <defs: Comma<VarDef>> ";" => VarDecl { <> }
+    <btype: FuncType> <defs: Comma<VarDef>> ";" => VarDecl {
+        btype: BType::from_func_type(btype),
+        defs,
+    }
 }
 
 VarDef: VarDef = {

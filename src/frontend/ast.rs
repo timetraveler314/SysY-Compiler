@@ -6,7 +6,13 @@ use crate::frontend::symbol::SymbolTableEntry;
 
 #[derive(Debug)]
 pub struct CompUnit {
-    pub functions: Vec<FuncDef>,
+    pub elements: Vec<CompElement>,
+}
+
+#[derive(Debug)]
+pub enum CompElement {
+    Decl(Decl),
+    FuncDef(FuncDef),
 }
 
 #[derive(Debug)]
@@ -30,6 +36,12 @@ impl FuncType {
             FuncType::Void => Type::get_unit(),
         }
     }
+
+    pub fn from_btype(btype: BType) -> FuncType {
+        match btype {
+            BType::Int => FuncType::Int,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +53,13 @@ impl BType {
     pub fn to(&self) -> Type {
         match self {
             BType::Int => Type::get_i32(),
+        }
+    }
+
+    pub fn from_func_type(func_type: FuncType) -> BType {
+        match func_type {
+            FuncType::Int => BType::Int,
+            FuncType::Void => panic!("Cannot convert void function type to BType"),
         }
     }
 }

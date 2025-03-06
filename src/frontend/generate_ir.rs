@@ -1,6 +1,8 @@
+use std::env::var;
 use koopa::ir::{BinaryOp, FunctionData, Type, Value};
-use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
-use crate::frontend::ast::{Block, BlockItem, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
+use koopa::ir::builder::{GlobalInstBuilder, LocalInstBuilder, ValueBuilder};
+use crate::backend::generate_asm::GenerateAsm;
+use crate::frontend::ast::{Block, BlockItem, CompElement, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
 use crate::frontend::FrontendError;
 use crate::common::environment::{IREnvironment};
 use crate::frontend::symbol::{SymbolTableEntry};
@@ -30,11 +32,27 @@ impl IRGenerator for CompUnit {
         env.generate_decl("@starttime", Vec::new(), Type::get_unit())?;
         env.generate_decl("@stoptime", Vec::new(), Type::get_unit())?;
 
-        // Traverse all the functions
-        for func_def in self.functions.iter() {
-            func_def.generate_ir(env)?;
+        // Traverse all the compilation elements
+        for comp_elem in self.elements.iter() {
+            comp_elem.generate_ir(env)?;
         }
         Ok(())
+    }
+}
+
+impl IRGenerator for CompElement {
+    type Output = ();
+
+    fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
+        match self {
+            CompElement::Decl(decl) => {
+                // Global decl
+                decl.generate_ir(env)
+            }
+            CompElement::FuncDef(func_def) => {
+                func_def.generate_ir(env)
+            }
+        }
     }
 }
 
@@ -143,25 +161,37 @@ impl IRGenerator for Decl {
             Decl::VarDecl(var_decl) => {
                 // TODO: Now assuming BType int
                 for var_def in var_decl.defs.iter() {
-                    match var_def {
-                        VarDef::Ident(ident) => {
-                            // Alloc for the variable
-                            // TODO: Any way to assign a name to the value in the IR?
-                            let var = value_builder!(env).alloc(Type::get_i32());
-                            env.context.add_instruction(var);
-                            env.bind(ident, SymbolTableEntry::Var(var))?;
-                        }
-                        VarDef::Init(ident, expr) => {
-                            // Alloc for the variable
-                            let var = value_builder!(env).alloc(Type::get_i32());
-                            env.context.add_instruction(var);
+                    if env.is_global() {
+                        let initializer = match var_def {
+                            VarDef::Ident(ident) => {
+                                let mut program_mut = env.context.program.borrow_mut();
+                                program_mut.new_value().zero_init(var_decl.btype.to())
+                            }
+                            VarDef::Init(ident, init) => {
+                                init.generate_ir(env)?
+                            }
+                        };
 
-                            // Assign the value
-                            let val = expr.generate_ir(env)?;
-                            let store = value_builder!(env).store(val, var);
-                            env.context.add_instruction(store);
+                        // Global variable
+                        let decl = env.context.program.borrow_mut().new_value().global_alloc(initializer);
+                    } else {
+                        // Alloc for the variable
+                        // TODO: Any way to assign a name to the value in the IR?
+                        let var = value_builder!(env).alloc(Type::get_i32());
+                        env.context.add_instruction(var);
 
-                            env.bind(ident, SymbolTableEntry::Var(var))?;
+                        match var_def {
+                            VarDef::Ident(ident) => {
+                                env.bind(ident, SymbolTableEntry::Var(var))?;
+                            }
+                            VarDef::Init(ident, expr) => {
+                                // Assign the value
+                                let val = expr.generate_ir(env)?;
+                                let store = value_builder!(env).store(val, var);
+                                env.context.add_instruction(store);
+
+                                env.bind(ident, SymbolTableEntry::Var(var))?;
+                            }
                         }
                     }
                 }

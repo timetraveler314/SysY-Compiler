@@ -116,6 +116,10 @@ impl IREnvironment {
         })?;
         Ok(())
     }
+
+    pub fn is_global(&self) -> bool {
+        self.context.current_func.is_none() && self.context.current_bb.is_none()
+    }
 }
 
 #[derive(Debug, Clone)]
