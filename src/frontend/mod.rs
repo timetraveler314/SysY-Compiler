@@ -2,12 +2,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use koopa::ir::Program;
 use crate::frontend::ast::CompUnit;
+use crate::frontend::environment::IREnvironment;
 use crate::frontend::generate_ir::IRGenerator;
-use crate::common::environment::{IREnvironment};
 
 pub mod ast;
 pub mod symbol;
 mod generate_ir;
+mod environment;
 
 #[derive(Debug)]
 pub enum FrontendError {

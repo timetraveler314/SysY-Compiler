@@ -1,5 +1,5 @@
 use koopa::ir::Type;
-use crate::common::environment::{IREnvironment};
+use crate::frontend::environment::IREnvironment;
 use crate::frontend::FrontendError;
 use crate::frontend::FrontendError::{BindingNonConstExpr, ConstEvalDivZero};
 use crate::frontend::symbol::SymbolTableEntry;

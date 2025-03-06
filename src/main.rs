@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
-use common::environment::{AsmEnvironment};
+use backend::environment::{AsmEnvironment};
 use crate::backend::generate_asm::GenerateAsm;
 use crate::opt::dead_code_elimination::DeadCodeEliminationPass;
 use crate::opt::OptPassFunction;

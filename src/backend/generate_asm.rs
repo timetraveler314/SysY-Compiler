@@ -1,11 +1,11 @@
 use crate::backend::instruction::Instruction;
 use crate::backend::register::RVRegister::A0;
-use crate::common::environment::{AsmEnvironment, FunctionPrologueInfo, ROContext, ValueStorage};
+use crate::backend::environment::{AsmEnvironment, FunctionPrologueInfo, ROContext, ValueStorage};
 use koopa::ir::{BinaryOp, FunctionData, Program, ValueKind};
 use koopa::ir::entities::ValueData;
 use crate::backend::asm::{AsmBasicBlock, AsmFunction};
 use crate::backend::register::{RVRegister, RVRegisterPool};
-use crate::get_func_from_env;
+use crate::get_func_from_ir_env;
 
 pub trait GenerateAsm {
     type Target;
@@ -114,7 +114,7 @@ impl ValueGenerateAsm for ValueData {
             return;
         }
 
-        let func_data = get_func_from_env!(env);
+        let func_data = get_func_from_ir_env!(env);
 
         match self.kind() {
             ValueKind::Integer(int) => {

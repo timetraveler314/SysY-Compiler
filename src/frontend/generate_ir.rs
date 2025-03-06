@@ -3,8 +3,8 @@ use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{GlobalInstBuilder, LocalInstBuilder, ValueBuilder};
 use crate::backend::generate_asm::GenerateAsm;
 use crate::frontend::ast::{Block, BlockItem, CompElement, CompUnit, ConstInitVal, Decl, Expr, FuncDef, LVal, Stmt, VarDef};
+use crate::frontend::environment::IREnvironment;
 use crate::frontend::FrontendError;
-use crate::common::environment::{IREnvironment};
 use crate::frontend::symbol::{SymbolTableEntry};
 
 macro_rules! value_builder {
