@@ -21,6 +21,7 @@ pub enum FrontendError {
     BreakOutsideOfLoop,
     ContinueOutsideOfLoop,
     InvalidFunctionCall,
+    GlobalAlloc,
 }
 
 pub fn generate_ir(comp_unit: &CompUnit) -> Result<Rc<RefCell<Program>>, FrontendError> {

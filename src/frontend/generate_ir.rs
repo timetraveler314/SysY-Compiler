@@ -1,4 +1,3 @@
-use std::env::var;
 use koopa::ir::{BinaryOp, FunctionData, Type, Value};
 use koopa::ir::builder::{GlobalInstBuilder, LocalInstBuilder, ValueBuilder};
 use crate::backend::generate_asm::GenerateAsm;
@@ -6,12 +5,7 @@ use crate::frontend::ast::{Block, BlockItem, CompElement, CompUnit, ConstInitVal
 use crate::frontend::environment::IREnvironment;
 use crate::frontend::FrontendError;
 use crate::frontend::symbol::{SymbolTableEntry};
-
-macro_rules! value_builder {
-    ($env:expr) => {
-        $env.context.program.borrow_mut().func_mut($env.context.current_func.unwrap()).dfg_mut().new_value()
-    };
-}
+use crate::{global_value_builder, local_value_builder};
 
 pub trait IRGenerator {
     type Output;
@@ -93,10 +87,10 @@ impl IRGenerator for FuncDef {
         // Bind the arguments to symbol table
         for (param, arg) in param_args.iter() {
             // Here we allocate a new value for the argument, TODO why
-            let var = value_builder!(new_env).alloc(param.btype.to());
+            let var = local_value_builder!(new_env).alloc(param.btype.to());
             new_env.context.add_instruction(var);
             // Store to var
-            let store = value_builder!(new_env).store(arg.clone(), var);
+            let store = local_value_builder!(new_env).store(arg.clone(), var);
             new_env.context.add_instruction(store);
             new_env.bind(&param.ident, SymbolTableEntry::Var(var))?;
         }
@@ -106,7 +100,7 @@ impl IRGenerator for FuncDef {
 
         // Void return
         if self.func_type.to() == Type::get_unit() {
-            let ret = value_builder!(new_env).ret(None);
+            let ret = local_value_builder!(new_env).ret(None);
             new_env.context.add_instruction(ret);
         }
 
@@ -162,22 +156,26 @@ impl IRGenerator for Decl {
                 // TODO: Now assuming BType int
                 for var_def in var_decl.defs.iter() {
                     if env.is_global() {
-                        let initializer = match var_def {
+                        let (ident, initializer) = match var_def {
                             VarDef::Ident(ident) => {
-                                let mut program_mut = env.context.program.borrow_mut();
-                                program_mut.new_value().zero_init(var_decl.btype.to())
+                                (ident, global_value_builder!(env).zero_init(var_decl.btype.to()))
                             }
                             VarDef::Init(ident, init) => {
-                                init.generate_ir(env)?
+                                let init_val = init.try_const_eval(env)?;
+                                (ident, global_value_builder!(env).integer(init_val))
                             }
                         };
 
                         // Global variable
                         let decl = env.context.program.borrow_mut().new_value().global_alloc(initializer);
+                        // Format the name with @
+                        let name = format!("@{}", ident);
+                        env.context.program.borrow_mut().set_value_name(decl, Some(name));
+                        env.bind(ident, SymbolTableEntry::Var(decl))?;
                     } else {
                         // Alloc for the variable
                         // TODO: Any way to assign a name to the value in the IR?
-                        let var = value_builder!(env).alloc(Type::get_i32());
+                        let var = local_value_builder!(env).alloc(Type::get_i32());
                         env.context.add_instruction(var);
 
                         match var_def {
@@ -187,7 +185,7 @@ impl IRGenerator for Decl {
                             VarDef::Init(ident, expr) => {
                                 // Assign the value
                                 let val = expr.generate_ir(env)?;
-                                let store = value_builder!(env).store(val, var);
+                                let store = local_value_builder!(env).store(val, var);
                                 env.context.add_instruction(store);
 
                                 env.bind(ident, SymbolTableEntry::Var(var))?;
@@ -208,7 +206,7 @@ impl IRGenerator for Stmt {
         match self {
             Stmt::Return(expr) => {
                 let return_val = expr.generate_ir(env)?;
-                let return_stmt = value_builder!(env).ret(Some(return_val));
+                let return_stmt = local_value_builder!(env).ret(Some(return_val));
                 env.context.add_instruction(return_stmt);
                 Ok(())
             }
@@ -220,7 +218,7 @@ impl IRGenerator for Stmt {
                         if let Some(entry) = env.lookup_lval(lval) {
                             match entry {
                                 SymbolTableEntry::Var(var) => {
-                                    let store = value_builder!(env).store(val, var);
+                                    let store = local_value_builder!(env).store(val, var);
                                     env.context.add_instruction(store);
                                     Ok(())
                                 }
@@ -255,13 +253,13 @@ impl IRGenerator for Stmt {
                 let then_bb = env.context.create_block(Some(group[0].clone()));
                 let merge_bb = env.context.create_block(Some(group[1].clone()));
 
-                let branch = value_builder!(env).branch(cond_val, then_bb, merge_bb);
+                let branch = local_value_builder!(env).branch(cond_val, then_bb, merge_bb);
                 env.context.add_instruction(branch);
 
                 // Generate IR for then block
                 let mut then_env = env.switch_bb(then_bb);
                 then_stmt.generate_ir(&mut then_env)?;
-                let then_jump = value_builder!(then_env).jump(merge_bb);
+                let then_jump = local_value_builder!(then_env).jump(merge_bb);
                 then_env.context.add_instruction(then_jump);
 
                 // Enter the merge block
@@ -277,19 +275,19 @@ impl IRGenerator for Stmt {
                 let else_bb = env.context.create_block(Some(group[1].clone()));
                 let merge_bb = env.context.create_block(Some(group[2].clone()));
 
-                let branch = value_builder!(env).branch(cond_val, then_bb, else_bb);
+                let branch = local_value_builder!(env).branch(cond_val, then_bb, else_bb);
                 env.context.add_instruction(branch);
 
                 // Generate IR for then block
                 let mut then_env = env.switch_bb(then_bb);
                 then_stmt.generate_ir(&mut then_env)?;
-                let then_jump = value_builder!(then_env).jump(merge_bb);
+                let then_jump = local_value_builder!(then_env).jump(merge_bb);
                 then_env.context.add_instruction(then_jump);
 
                 // Generate IR for else block
                 let mut else_env = env.switch_bb(else_bb);
                 else_stmt.generate_ir(&mut else_env)?;
-                let else_jump = value_builder!(else_env).jump(merge_bb);
+                let else_jump = local_value_builder!(else_env).jump(merge_bb);
                 else_env.context.add_instruction(else_jump);
 
                 // Enter the merge block
@@ -305,19 +303,19 @@ impl IRGenerator for Stmt {
 
                 env.while_stack.push((entry_bb, end_bb));
 
-                let entry_jump = value_builder!(env).jump(entry_bb);
+                let entry_jump = local_value_builder!(env).jump(entry_bb);
                 env.context.add_instruction(entry_jump);
 
                 // Generate IR for the entry block
                 let mut entry_env = env.switch_bb(entry_bb);
                 let cond_val = cond.generate_ir(&mut entry_env)?;
-                let branch = value_builder!(entry_env).branch(cond_val, body_bb, end_bb);
+                let branch = local_value_builder!(entry_env).branch(cond_val, body_bb, end_bb);
                 entry_env.context.add_instruction(branch);
 
                 // Generate IR for the body block
                 let mut body_env = entry_env.switch_bb(body_bb);
                 stmt.generate_ir(&mut body_env)?;
-                let body_jump = value_builder!(body_env).jump(entry_bb);
+                let body_jump = local_value_builder!(body_env).jump(entry_bb);
                 body_env.context.add_instruction(body_jump);
 
                 // Enter the end block, set the last_while in the context
@@ -328,7 +326,7 @@ impl IRGenerator for Stmt {
             }
             Stmt::Break => {
                 if let Some((_while_bb, end_bb)) = env.while_stack.last() {
-                    let jump = value_builder!(env).jump(*end_bb);
+                    let jump = local_value_builder!(env).jump(*end_bb);
                     env.context.add_instruction(jump);
                     Ok(())
                 } else {
@@ -337,7 +335,7 @@ impl IRGenerator for Stmt {
             }
             Stmt::Continue => {
                 if let Some((while_bb, _end_bb)) = env.while_stack.last() {
-                    let jump = value_builder!(env).jump(*while_bb);
+                    let jump = local_value_builder!(env).jump(*while_bb);
                     env.context.add_instruction(jump);
                     Ok(())
                 } else {
@@ -352,7 +350,7 @@ macro_rules! generate_binary_expr {
     ($env:expr, $lhs:expr, $rhs:expr, $op:ident) => {{
         let lhs_val = $lhs.generate_ir($env)?;
         let rhs_val = $rhs.generate_ir($env)?;
-        let op = value_builder!($env).binary(BinaryOp::$op, lhs_val, rhs_val);
+        let op = local_value_builder!($env).binary(BinaryOp::$op, lhs_val, rhs_val);
         $env.context.add_instruction(op);
         Ok(op)
     }};
@@ -363,15 +361,15 @@ impl IRGenerator for Expr {
 
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
         match self {
-            Expr::Num(num) => Ok(value_builder!(env).integer(*num)),
+            Expr::Num(num) => Ok(local_value_builder!(env).integer(*num)),
             Expr::LVal(lval) => {
                 match env.lookup_lval(lval) {
                     None => Err(FrontendError::DefinitionNotFoundForIdentifier(lval.ident().into())),
                     Some(entry) => {
                         match entry {
-                            SymbolTableEntry::Const(_, num) => Ok(value_builder!(env).integer(num)),
+                            SymbolTableEntry::Const(_, num) => Ok(local_value_builder!(env).integer(num)),
                             SymbolTableEntry::Var(var) => {
-                                let load = value_builder!(env).load(var);
+                                let load = local_value_builder!(env).load(var);
                                 env.context.add_instruction(load);
                                 Ok(load)
                             }
@@ -382,16 +380,16 @@ impl IRGenerator for Expr {
             }
             Expr::Pos(expr) => expr.generate_ir(env),
             Expr::Neg(expr) => {
-                let zero = value_builder!(env).integer(0);
+                let zero = local_value_builder!(env).integer(0);
                 let val = expr.generate_ir(env)?;
-                let op = value_builder!(env).binary(BinaryOp::Sub, zero, val);
+                let op = local_value_builder!(env).binary(BinaryOp::Sub, zero, val);
                 env.context.add_instruction(op);
                 Ok(op)
             }
             Expr::Not(expr) => {
-                let zero = value_builder!(env).integer(0);
+                let zero = local_value_builder!(env).integer(0);
                 let val = expr.generate_ir(env)?;
-                let op = value_builder!(env).binary(BinaryOp::Eq, val, zero);
+                let op = local_value_builder!(env).binary(BinaryOp::Eq, val, zero);
                 env.context.add_instruction(op);
                 Ok(op)
             }
@@ -410,44 +408,44 @@ impl IRGenerator for Expr {
             Expr::Ne(lhs, rhs) => generate_binary_expr!(env, lhs, rhs, NotEq),
             Expr::Land(lhs, rhs) => {
                 if self.has_side_effect() {
-                    let result = value_builder!(env).alloc(Type::get_i32());
+                    let result = local_value_builder!(env).alloc(Type::get_i32());
                     env.context.add_instruction(result);
-                    let zero_result_init = value_builder!(env).integer(0);
-                    let result_init = value_builder!(env).store(zero_result_init, result);
+                    let zero_result_init = local_value_builder!(env).integer(0);
+                    let result_init = local_value_builder!(env).store(zero_result_init, result);
                     env.context.add_instruction(result_init);
 
                     let lhs_val = lhs.generate_ir(env)?;
-                    let zero = value_builder!(env).integer(0);
-                    let lhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
+                    let zero = local_value_builder!(env).integer(0);
+                    let lhs_neq_z = local_value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
                     env.context.add_instruction(lhs_neq_z);
 
                     let bb_branch = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_and_branch")));
                     let bb_merge = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_and_merge")));
 
-                    let branch = value_builder!(env).branch(lhs_neq_z, bb_branch, bb_merge);
+                    let branch = local_value_builder!(env).branch(lhs_neq_z, bb_branch, bb_merge);
                     env.context.add_instruction(branch);
 
                     let mut branch_env = env.switch_bb(bb_branch);
                     let rhs_val = rhs.generate_ir(&mut branch_env)?;
-                    let zero_branch = value_builder!(branch_env).integer(0);
-                    let rhs_neq_z = value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
+                    let zero_branch = local_value_builder!(branch_env).integer(0);
+                    let rhs_neq_z = local_value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
                     branch_env.context.add_instruction(rhs_neq_z);
-                    let result_assign = value_builder!(branch_env).store(rhs_neq_z, result);
+                    let result_assign = local_value_builder!(branch_env).store(rhs_neq_z, result);
                     branch_env.context.add_instruction(result_assign);
-                    let branch_jump = value_builder!(branch_env).jump(bb_merge);
+                    let branch_jump = local_value_builder!(branch_env).jump(bb_merge);
                     branch_env.context.add_instruction(branch_jump);
 
                     env.enter_bb(bb_merge);
-                    let result_load = value_builder!(env).load(result);
+                    let result_load = local_value_builder!(env).load(result);
                     env.context.add_instruction(result_load);
                     Ok(result_load)
                 } else {
                     let lhs_val = lhs.generate_ir(env)?;
                     let rhs_val = rhs.generate_ir(env)?;
-                    let zero = value_builder!(env).integer(0);
-                    let lhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
-                    let rhs_neq_z = value_builder!(env).binary(BinaryOp::NotEq, rhs_val, zero);
-                    let op = value_builder!(env).binary(BinaryOp::And, lhs_neq_z, rhs_neq_z);
+                    let zero = local_value_builder!(env).integer(0);
+                    let lhs_neq_z = local_value_builder!(env).binary(BinaryOp::NotEq, lhs_val, zero);
+                    let rhs_neq_z = local_value_builder!(env).binary(BinaryOp::NotEq, rhs_val, zero);
+                    let op = local_value_builder!(env).binary(BinaryOp::And, lhs_neq_z, rhs_neq_z);
                     env.context.add_instruction(lhs_neq_z);
                     env.context.add_instruction(rhs_neq_z);
                     env.context.add_instruction(op);
@@ -456,43 +454,43 @@ impl IRGenerator for Expr {
             }
             Expr::Lor(lhs, rhs) => {
                 if self.has_side_effect() {
-                    let result = value_builder!(env).alloc(Type::get_i32());
+                    let result = local_value_builder!(env).alloc(Type::get_i32());
                     env.context.add_instruction(result);
-                    let one_result_init = value_builder!(env).integer(1);
-                    let result_init = value_builder!(env).store(one_result_init, result);
+                    let one_result_init = local_value_builder!(env).integer(1);
+                    let result_init = local_value_builder!(env).store(one_result_init, result);
                     env.context.add_instruction(result_init);
 
                     let lhs_val = lhs.generate_ir(env)?;
-                    let zero = value_builder!(env).integer(0);
-                    let lhs_eq_z = value_builder!(env).binary(BinaryOp::Eq, lhs_val, zero);
+                    let zero = local_value_builder!(env).integer(0);
+                    let lhs_eq_z = local_value_builder!(env).binary(BinaryOp::Eq, lhs_val, zero);
                     env.context.add_instruction(lhs_eq_z);
 
                     let bb_branch = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_or_branch")));
                     let bb_merge = env.context.create_block(Some(env.name_generator.borrow_mut().generate("%logical_or_merge")));
 
-                    let branch = value_builder!(env).branch(lhs_eq_z, bb_branch, bb_merge);
+                    let branch = local_value_builder!(env).branch(lhs_eq_z, bb_branch, bb_merge);
                     env.context.add_instruction(branch);
 
                     let mut branch_env = env.switch_bb(bb_branch);
                     let rhs_val = rhs.generate_ir(&mut branch_env)?;
-                    let zero_branch = value_builder!(branch_env).integer(0);
-                    let rhs_neq_z = value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
+                    let zero_branch = local_value_builder!(branch_env).integer(0);
+                    let rhs_neq_z = local_value_builder!(branch_env).binary(BinaryOp::NotEq, rhs_val, zero_branch);
                     branch_env.context.add_instruction(rhs_neq_z);
-                    let result_assign = value_builder!(branch_env).store(rhs_neq_z, result);
+                    let result_assign = local_value_builder!(branch_env).store(rhs_neq_z, result);
                     branch_env.context.add_instruction(result_assign);
-                    let branch_jump = value_builder!(branch_env).jump(bb_merge);
+                    let branch_jump = local_value_builder!(branch_env).jump(bb_merge);
                     branch_env.context.add_instruction(branch_jump);
 
                     env.enter_bb(bb_merge);
-                    let result_load = value_builder!(env).load(result);
+                    let result_load = local_value_builder!(env).load(result);
                     env.context.add_instruction(result_load);
                     Ok(result_load)
                 } else {
                     let lhs_val = lhs.generate_ir(env)?;
                     let rhs_val = rhs.generate_ir(env)?;
-                    let zero = value_builder!(env).integer(0);
-                    let op = value_builder!(env).binary(BinaryOp::Or, lhs_val, rhs_val);
-                    let snez = value_builder!(env).binary(BinaryOp::NotEq, op, zero);
+                    let zero = local_value_builder!(env).integer(0);
+                    let op = local_value_builder!(env).binary(BinaryOp::Or, lhs_val, rhs_val);
+                    let snez = local_value_builder!(env).binary(BinaryOp::NotEq, op, zero);
                     env.context.add_instruction(op);
                     env.context.add_instruction(snez);
                     Ok(snez)
@@ -513,7 +511,7 @@ impl IRGenerator for Expr {
                                 }
 
                                 // Call the function
-                                let call = value_builder!(env).call(handle, arg_vals);
+                                let call = local_value_builder!(env).call(handle, arg_vals);
                                 env.context.add_instruction(call);
                                 Ok(call)
                             }

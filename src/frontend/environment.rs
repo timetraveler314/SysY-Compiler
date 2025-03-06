@@ -14,6 +14,20 @@ macro_rules! get_func_from_ir_env {
     };
 }
 
+#[macro_export]
+macro_rules! local_value_builder {
+    ($env:expr) => {
+        $env.context.program.borrow_mut().func_mut($env.context.current_func.unwrap()).dfg_mut().new_value()
+    };
+}
+
+#[macro_export]
+macro_rules! global_value_builder {
+    ($env:expr) => {
+        $env.context.program.borrow_mut().new_value()
+    };
+}
+
 pub struct IRContext {
     pub program: Rc<RefCell<Program>>,
     pub current_func: Option<Function>,
