@@ -1,3 +1,5 @@
+use std::cmp::max;
+use std::fmt::Pointer;
 use crate::backend::instruction::Instruction;
 use crate::backend::register::RVRegister::A0;
 use crate::backend::environment::{AsmEnvironment, FunctionPrologueInfo, ROContext, ValueStorage};
@@ -39,12 +41,12 @@ impl GenerateAsm for Program {
                     current_bb: None,
                 },
                 presence_table: std::collections::HashMap::new(),
-                function_prologue_info: FunctionPrologueInfo {
-                    stack_size: 0,
-                },
+                function_prologue_info: FunctionPrologueInfo::new(),
+                analysis_result: env.analysis_result.clone(),
                 register_pool: RVRegisterPool::new_temp_pool(),
                 name_map: std::collections::HashMap::new(),
                 name_generator: env.name_generator.clone(),
+                stack_frame_size: 0,
             });
 
             text_section.content.push(asm_func);
@@ -59,7 +61,46 @@ impl GenerateAsm for FunctionData {
     type Target = AsmFunction;
 
     fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, env: &mut AsmEnvironment<'b>) {
-        let mut prologue_info = FunctionPrologueInfo { stack_size: 0 };
+        if self.layout().entry_bb().is_none() {
+            // SysY library functions, skip
+            return;
+        }
+
+        let mut prologue_info = FunctionPrologueInfo::new();
+        // Fill in prologue_info with analysis results
+        let self_handle = env.context.current_func.unwrap();
+        let call_graph = &env.analysis_result.call_graph.graph;
+        if call_graph.contains_key(&self_handle) {
+            let body = call_graph.get(&self_handle).unwrap();
+            prologue_info.args_stack_size = max(0, body.max_args as i32 - 8) * 4;
+            prologue_info.is_leaf = body.callee.is_empty();
+        } else {
+            prologue_info.args_stack_size = 0;
+            prologue_info.is_leaf = true;
+        }
+        env.function_prologue_info = prologue_info.clone();
+
+        // Estimate the stack frame size, save to the outside `prologue_info`
+        let estimated_stack_size = env.context.program.func(self_handle).dfg().values().iter().fold(
+            0usize, |stack_size, (&value_h, value_data)| {
+                stack_size + match value_data.kind() {
+                    ValueKind::FuncArgRef(_) => 0,
+                    ValueKind::BlockArgRef(_) => unreachable!(),
+                    ValueKind::Alloc(_) => 4,
+                    ValueKind::GlobalAlloc(_) => unreachable!(),
+                    ValueKind::Load(_) => 4,
+                    ValueKind::GetPtr(_) => unreachable!(),
+                    ValueKind::GetElemPtr(_) => unreachable!(),
+                    ValueKind::Binary(_) => 4,
+                    ValueKind::Jump(_) => 0,
+                    ValueKind::Call(_) => 4,
+                    ValueKind::Return(_) => 0,
+                    _ => 0
+                }
+            }
+        );
+        prologue_info.stack_size = estimated_stack_size as i32;
+        env.stack_frame_size = prologue_info.get_aligned_stack_size() as usize;
 
         // Traverse the basic blocks and corresponding instructions
         for (i, (&bb_h, node)) in self.layout().bbs().iter().enumerate() {
@@ -80,13 +121,18 @@ impl GenerateAsm for FunctionData {
                 value_data.generate_value(&mut bb, env);
             }
 
-            // Prologue and epilogue
-            prologue_info = env.function_prologue_info.clone();
-
             target.basic_blocks.push(bb);
         }
 
-        let aligned_stack_size = prologue_info.stack_size + (16 - prologue_info.stack_size % 16);
+        let aligned_stack_size = prologue_info.get_aligned_stack_size();
+
+        // Now we have the stack size that is calculated in two ways,
+        // compare them to check whether the implementation is correct
+        assert_eq!(prologue_info.stack_size, env.function_prologue_info.stack_size);
+        assert_eq!(prologue_info.args_stack_size, env.function_prologue_info.args_stack_size);
+        assert_eq!(prologue_info.is_leaf, env.function_prologue_info.is_leaf);
+
+        // Prologue
         target.prologue.extend(vec![
             Instruction::Addi {
                 rd: RVRegister::Sp,
@@ -94,6 +140,24 @@ impl GenerateAsm for FunctionData {
                 imm: -aligned_stack_size,
             },
         ]);
+        // Save the `ra` register if applicable
+        if !prologue_info.is_leaf {
+            target.prologue.push(Instruction::Sw {
+                rs: RVRegister::Ra,
+                rd: RVRegister::Sp,
+                imm: prologue_info.stack_size + prologue_info.args_stack_size
+            });
+        }
+
+        // Epilogue
+        // Restore the `ra` register if applicable
+        if !prologue_info.is_leaf {
+            target.epilogue.push(Instruction::Lw {
+                rd: RVRegister::Ra,
+                rs: RVRegister::Sp,
+                imm: prologue_info.stack_size + prologue_info.args_stack_size
+            });
+        }
         target.epilogue.extend(vec![
             Instruction::Addi {
                 rd: RVRegister::Sp,
@@ -121,15 +185,18 @@ impl ValueGenerateAsm for ValueData {
                 env.bind_data_storage(&self, ValueStorage::Immediate(int.value()));
             }
             ValueKind::Return(ret) => {
-                let value_h = ret.value().expect("Return value not found");
-
-                func_data.dfg().value(value_h).generate_value(target, env);
-                let rs = env.load_data(target, func_data.dfg().value(value_h));
-
-                target.instructions.push(Instruction::Mv {
-                    rd: A0,
-                    rs
-                });
+                match ret.value() {
+                    Some(value_h) => {
+                        func_data.dfg().value(value_h).generate_value(target, env);
+                        let rs = env.load_data(target, func_data.dfg().value(value_h));
+                        target.instructions.push(Instruction::Mv {
+                            rd: A0,
+                            rs
+                        });
+                        env.free_register(rs);
+                    }
+                    None => {}
+                }
 
                 target.is_exit = true;
             }
@@ -220,6 +287,51 @@ impl ValueGenerateAsm for ValueData {
                 target.instructions.push(Instruction::J {
                     label: env.lookup_name(&jump.target()).to_string(),
                 });
+            }
+            ValueKind::Call(call) => {
+                // TODO: check preparation correctness
+                // Prepare arguments
+                for (i, &arg) in call.args().iter().enumerate() {
+                    let arg_value_data = func_data.dfg().value(arg);
+                    arg_value_data.generate_value(target, env);
+
+                    if i < 8 {
+                        let rs = env.load_data(target, arg_value_data);
+                        target.instructions.push(Instruction::Mv {
+                            rd: RVRegister::get_arg_reg(i),
+                            rs,
+                        });
+                        env.free_register(rs);
+                    } else {
+                        let rs = env.load_data(target, arg_value_data);
+                        target.instructions.push(Instruction::Sw {
+                            rs,
+                            rd: RVRegister::Sp,
+                            imm: (i - 8) as i32 * 4,
+                        });
+                        env.free_register(rs);
+                    }
+                }
+
+                // Call!
+                let callee = env.context.program.func(call.callee()).name()[1..].to_string();
+                target.instructions.push(Instruction::Call {
+                    label: callee,
+                });
+
+                // Handle return by saving `a0`
+                env.alloc_stack_storage(self, 4);
+                env.store_data(target, self, Some(RVRegister::A0));
+            }
+            ValueKind::FuncArgRef(arg) => {
+                let arg_index = arg.index() as i32;
+                if arg_index < 8 {
+                    env.bind_data_storage(&self, ValueStorage::Register(RVRegister::get_arg_reg(arg.index())));
+                } else {
+                    // Compensate for the current stack frame
+                    let position = (arg.index() - 8) * 4 + env.stack_frame_size;
+                    env.bind_data_storage(&self, ValueStorage::Stack(position as i32));
+                }
             }
             _ => unreachable!(),
         }

@@ -22,6 +22,7 @@ pub enum Instruction {
     // Branch instructions
     Bnez { rs: RVRegister, label: String },
     J { label: String },
+    Call { label: String },
     Ret,
 }
 
@@ -48,6 +49,7 @@ impl std::fmt::Display for Instruction {
             Instruction::Snez { rd, rs } => write!(f, "snez {}, {}", rd, rs),
             Instruction::Bnez { rs, label } => write!(f, "bnez {}, {}", rs, label),
             Instruction::J { label } => write!(f, "j {}", label),
+            Instruction::Call { label } => write!(f, "call {}", label),
             Instruction::Ret => write!(f, "ret"),
         }
     }

@@ -43,9 +43,9 @@ fn main() -> std::io::Result<()> {
             let mut asm_program = backend::asm::AsmProgram {
                 sections: Vec::new(),
             };
-            let mut program = ir.borrow();
-            let mut env = AsmEnvironment::new(&*program);
-            (&*program).generate(&mut asm_program, &mut env);
+            let program = &*ir.borrow();
+            let mut env = AsmEnvironment::new(program);
+            program.generate(&mut asm_program, &mut env);
 
             let mut riscv_output = File::create(output_file)?;
             println!("{:?}", asm_program);
