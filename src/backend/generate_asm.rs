@@ -5,7 +5,7 @@ use crate::backend::register::RVRegister::A0;
 use crate::backend::environment::{AsmEnvironment, FunctionPrologueInfo, ROContext, ValueStorage};
 use koopa::ir::{BinaryOp, FunctionData, Program, ValueKind};
 use koopa::ir::entities::ValueData;
-use crate::backend::asm::{AsmBasicBlock, AsmFunction};
+use crate::backend::asm::{AsmBasicBlock, AsmFunction, AsmGlobal, AsmVariable, AsmVariableInit};
 use crate::backend::register::{RVRegister, RVRegisterPool};
 use crate::get_func_from_ir_env;
 
@@ -25,22 +25,62 @@ impl GenerateAsm for Program {
     type Target = crate::backend::asm::AsmProgram;
 
     fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, env: &mut AsmEnvironment<'b>) {
+        let mut data_section = crate::backend::asm::AsmSection {
+            section_type: crate::backend::asm::AsmSectionType::Data,
+            content: Vec::new(),
+        };
         let mut text_section = crate::backend::asm::AsmSection {
             section_type: crate::backend::asm::AsmSectionType::Text,
-            label: "main".to_string(),
             content: Vec::new(),
         };
 
+        // Traverse the global variables
+        for &global_h in self.inst_layout() {
+            let global = self.borrow_value(global_h);
+            match global.kind() {
+                ValueKind::GlobalAlloc(alloc) => {
+                    let name = &global.name().clone().unwrap()[1..];
+
+                    // Add to presence table
+                    env.presence_table.insert(&*global as *const ValueData, ValueStorage::Global(name.to_string()));
+
+                    let initial_value_data = self.borrow_value(alloc.init());
+
+                    let init = match initial_value_data.kind() {
+                        ValueKind::Integer(int) => AsmVariableInit::Word(int.value()),
+                        ValueKind::ZeroInit(_) => AsmVariableInit::Zero(initial_value_data.ty().size()),
+                        _ => unreachable!(),
+                    };
+
+                    let asm_global = AsmGlobal::AsmVariable(
+                        AsmVariable {
+                            label: name.to_string(),
+                            init,
+                        }
+                    );
+
+                    data_section.content.push(asm_global);
+                }
+                _ => {}
+            }
+        }
+
         // Traverse the functions
         for &func_h in self.func_layout() {
-            let mut asm_func = AsmFunction::new(&self.func(func_h).name()[1..]);
-            self.func(func_h).generate(&mut asm_func, &mut AsmEnvironment {
+            let func_data = self.func(func_h);
+            if func_data.layout().entry_bb().is_none() {
+                // SysY library functions, skip
+                continue;
+            }
+
+            let mut asm_func = AsmFunction::new(&func_data.name()[1..]);
+            func_data.generate(&mut asm_func, &mut AsmEnvironment {
                 context: ROContext {
                     program: self,
                     current_func: Some(func_h),
                     current_bb: None,
                 },
-                presence_table: std::collections::HashMap::new(),
+                presence_table: env.presence_table.clone(),
                 function_prologue_info: FunctionPrologueInfo::new(),
                 analysis_result: env.analysis_result.clone(),
                 register_pool: RVRegisterPool::new_temp_pool(),
@@ -49,9 +89,10 @@ impl GenerateAsm for Program {
                 stack_frame_size: 0,
             });
 
-            text_section.content.push(asm_func);
+            text_section.content.push(AsmGlobal::AsmFunction(asm_func));
         }
 
+        target.sections.push(data_section);
         target.sections.push(text_section);
     }
 }
@@ -61,11 +102,6 @@ impl GenerateAsm for FunctionData {
     type Target = AsmFunction;
 
     fn generate<'b, 'a: 'b>(&'a self, target: &mut Self::Target, env: &mut AsmEnvironment<'b>) {
-        if self.layout().entry_bb().is_none() {
-            // SysY library functions, skip
-            return;
-        }
-
         let mut prologue_info = FunctionPrologueInfo::new();
         // Fill in prologue_info with analysis results
         let self_handle = env.context.current_func.unwrap();
@@ -256,8 +292,12 @@ impl ValueGenerateAsm for ValueData {
                 // just as what we did in binary
                 env.alloc_stack_storage(self, 4);
 
-                let from = func_data.dfg().value(load.src());
-                let rs = env.load_data(target, from);
+                let x = env.context.program.borrow_values();
+                let from = x.get(&load.src()).unwrap_or_else(
+                    || func_data.dfg().value(load.src())
+                );
+                // let from = func_data.dfg().value(load.src());
+                let rs = env.load_data(target, &*from);
                 env.store_data(target, self, Some(rs));
             }
             ValueKind::Store(store) => {
@@ -266,7 +306,12 @@ impl ValueGenerateAsm for ValueData {
                 src_value_data.generate_value(target, env);
 
                 let src = env.load_data(target, src_value_data);
-                env.store_data(target, func_data.dfg().value(store.dest()), Some(src));
+
+                let x = env.context.program.borrow_values();
+                let to = x.get(&store.dest()).unwrap_or_else(
+                    || func_data.dfg().value(store.dest())
+                );
+                env.store_data(target, to, Some(src));
             }
             ValueKind::Branch(branch) => {
                 let cond_value_data = func_data.dfg().value(branch.cond());

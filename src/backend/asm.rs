@@ -1,4 +1,5 @@
 use crate::backend::instruction::Instruction;
+use std::io::Write;
 
 #[derive(Debug)]
 pub struct AsmProgram {
@@ -8,13 +9,41 @@ pub struct AsmProgram {
 #[derive(Debug)]
 pub enum AsmSectionType {
     Text,
+    Data,
 }
 
 #[derive(Debug)]
 pub struct AsmSection {
     pub(crate) section_type: AsmSectionType,
+    // pub(crate) label: String,
+    pub(crate) content: Vec<AsmGlobal>,
+}
+
+#[derive(Debug)]
+pub enum AsmGlobal {
+    AsmVariable(AsmVariable),
+    AsmFunction(AsmFunction),
+}
+
+impl AsmGlobal {
+    pub fn label(&self) -> &str {
+        match self {
+            AsmGlobal::AsmVariable(v) => &v.label,
+            AsmGlobal::AsmFunction(f) => &f.label,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct AsmVariable {
     pub(crate) label: String,
-    pub(crate) content: Vec<AsmFunction>,
+    pub(crate) init: AsmVariableInit,
+}
+
+#[derive(Debug)]
+pub enum AsmVariableInit {
+    Word(i32),
+    Zero(usize),
 }
 
 #[derive(Debug)]
@@ -59,45 +88,93 @@ impl AsmBasicBlock {
     }
 }
 
-impl AsmProgram {
+pub trait AsmEmitter {
+    fn emit(&self, out: &mut impl std::io::Write) -> std::io::Result<()>;
+}
+
+impl AsmEmitter for AsmProgram {
     // write to an output stream
-    pub fn emit(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+    fn emit(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
         for section in &self.sections {
-            match section.section_type {
-                AsmSectionType::Text => {
-                    writeln!(out, "   .text")?;
-                    writeln!(out, "   .globl {}", section.label)?;
-                    // Traverse the functions
-                    for func in &section.content {
-                        for (i, bb) in func.basic_blocks.iter().enumerate() {
-                            if let Some(label) = &bb.label {
-                                writeln!(out, "{}:", label)?;
-                            }
+            // Write the section
 
-                            if bb.is_entry {
-                                writeln!(out, "    # --- Prologue of {} ---", func.label)?;
-                                for inst in &func.prologue {
-                                    writeln!(out, "    {}", inst)?;
-                                }
-                                writeln!(out, "    # --- Prologue of {} ---", func.label)?;
-                            }
+            section.emit(out)?;
+        }
+        Ok(())
+    }
+}
 
-                            for inst in &bb.instructions {
-                                writeln!(out, "    {}", inst)?;
-                            }
+impl AsmEmitter for AsmSection {
+    fn emit(&self, out: &mut impl Write) -> std::io::Result<()> {
+        // Header
+        match self.section_type {
+            AsmSectionType::Text => {
+                writeln!(out, "   .text")?;
+            }
+            AsmSectionType::Data => {
+                writeln!(out, "   .data")?;
+            }
+        }
 
-                            if bb.is_exit {
-                                writeln!(out, "    # --- Epilogue of {} ---", func.label)?;
-                                for inst in &func.epilogue {
-                                    writeln!(out, "    {}", inst)?;
-                                }
-                                writeln!(out, "    # --- Epilogue of {} ---", func.label)?;
-                            }
+        // Globals
+        for global in &self.content {
+            writeln!(out, "   .globl {}", global.label())?;
+        }
+
+        // Body
+        for global in &self.content {
+            global.emit(out)?;
+        }
+
+        writeln!(out, "")?;
+
+        Ok(())
+    }
+}
+
+impl AsmEmitter for AsmGlobal {
+    fn emit(&self, out: &mut impl Write) -> std::io::Result<()> {
+        match self {
+            AsmGlobal::AsmVariable(var) => {
+                writeln!(out, "{}:", var.label)?;
+                match &var.init {
+                    AsmVariableInit::Word(value) => {
+                        writeln!(out, "   .word {}", value)?;
+                    }
+                    AsmVariableInit::Zero(size) => {
+                        writeln!(out, "   .zero {}", size)?;
+                    }
+                }
+            }
+            AsmGlobal::AsmFunction(func) => {
+                for bb in func.basic_blocks.iter() {
+                    if let Some(label) = &bb.label {
+                        writeln!(out, "{}:", label)?;
+                    }
+
+                    if bb.is_entry {
+                        writeln!(out, "    # --- Prologue of {} ---", func.label)?;
+                        for inst in &func.prologue {
+                            writeln!(out, "    {}", inst)?;
                         }
+                        writeln!(out, "    # --- Prologue of {} ---", func.label)?;
+                    }
+
+                    for inst in &bb.instructions {
+                        writeln!(out, "    {}", inst)?;
+                    }
+
+                    if bb.is_exit {
+                        writeln!(out, "    # --- Epilogue of {} ---", func.label)?;
+                        for inst in &func.epilogue {
+                            writeln!(out, "    {}", inst)?;
+                        }
+                        writeln!(out, "    # --- Epilogue of {} ---", func.label)?;
                     }
                 }
             }
         }
+
         Ok(())
     }
 }

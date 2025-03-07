@@ -44,6 +44,7 @@ pub enum ValueStorage {
     Immediate(i32),
     Register(RVRegister),
     Stack(i32),
+    Global(String),
 }
 
 pub struct ROContext<'a> {
@@ -124,6 +125,22 @@ impl<'a> AsmEnvironment<'a> {
                         register
                     }
                 }
+                ValueStorage::Global(ident) => {
+                    let global_addr_register = self.register_pool.next().unwrap();
+                    let register = self.register_pool.next().unwrap();
+                    target.add_instruction(Instruction::La {
+                        rd: global_addr_register.clone(),
+                        label: ident.clone(),
+                    });
+                    target.add_instruction(Instruction::Lw {
+                        rd: register.clone(),
+                        rs: global_addr_register.clone(),
+                        imm: 0,
+                    });
+                    // Free the global address register
+                    self.register_pool.release(global_addr_register);
+                    register
+                }
             },
             None => panic!("Value {:?} not present in presence table", value),
         }
@@ -146,6 +163,23 @@ impl<'a> AsmEnvironment<'a> {
                     self.register_pool.release(register);
                 }
                 ValueStorage::Immediate(_) => unimplemented!(),
+                ValueStorage::Global(label) => {
+                    let global_addr_register = self.register_pool.next().unwrap();
+                    target.add_instruction(Instruction::La {
+                        rd: global_addr_register.clone(),
+                        label: label.clone(),
+                    });
+                    let register = register.unwrap();
+                    target.add_instruction(Instruction::Sw {
+                        rs: register,
+                        rd: global_addr_register.clone(),
+                        imm: 0,
+                    });
+                    // Free the global address register
+                    self.register_pool.release(global_addr_register);
+                    // Free the register
+                    self.register_pool.release(register);
+                }
             },
             None => panic!("Value not present in presence table"),
         }

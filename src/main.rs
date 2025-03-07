@@ -9,6 +9,7 @@ use std::io::Write;
 use koopa::back::KoopaGenerator;
 use lalrpop_util::lalrpop_mod;
 use backend::environment::{AsmEnvironment};
+use crate::backend::asm::AsmEmitter;
 use crate::backend::generate_asm::GenerateAsm;
 use crate::opt::dead_code_elimination::DeadCodeEliminationPass;
 use crate::opt::OptPassFunction;
