@@ -6,7 +6,7 @@ use crate::frontend::ast::*;
 match {
     r"\s*" => {}, // skip whitespace
     r"//[^\n\r]*[\n\r]*" => {}, // skip single-line comment
-    r"/\*([^*]|\*[^/])*\*/" => {}, // skip multi-line comment
+    r"/\*[^*]*\*+([^/*][^*]*\*+)*/" => {}, // skip multi-line comment
     _
 }
 
@@ -110,7 +110,7 @@ ClosedStmt: Stmt = {
 }
 
 NonIfStmt: Stmt = {
-    "return" <expr: Exp> ";" => Stmt::Return(expr),
+    "return" <expr: Exp?> ";" => Stmt::Return(expr),
     <lv: LVal> "=" <expr: Exp> ";" => Stmt::Assign(lv, expr),
     <maybe_expr: Exp?> ";" => {
         match maybe_expr {

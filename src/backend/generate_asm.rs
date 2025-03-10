@@ -169,39 +169,19 @@ impl GenerateAsm for FunctionData {
         assert_eq!(prologue_info.is_leaf, env.function_prologue_info.is_leaf);
 
         // Prologue
-        target.prologue.extend(vec![
-            Instruction::Addi {
-                rd: RVRegister::Sp,
-                rs: RVRegister::Sp,
-                imm: -aligned_stack_size,
-            },
-        ]);
+        target.prologue.extend(env.generate_addi(RVRegister::Sp, RVRegister::Sp, -aligned_stack_size));
         // Save the `ra` register if applicable
         if !prologue_info.is_leaf {
-            target.prologue.push(Instruction::Sw {
-                rs: RVRegister::Ra,
-                rd: RVRegister::Sp,
-                imm: prologue_info.stack_size + prologue_info.args_stack_size
-            });
+            target.prologue.extend(env.generate_sw(RVRegister::Ra, RVRegister::Sp, prologue_info.stack_size + prologue_info.args_stack_size));
         }
 
         // Epilogue
         // Restore the `ra` register if applicable
         if !prologue_info.is_leaf {
-            target.epilogue.push(Instruction::Lw {
-                rd: RVRegister::Ra,
-                rs: RVRegister::Sp,
-                imm: prologue_info.stack_size + prologue_info.args_stack_size
-            });
+            target.epilogue.extend(env.generate_lw(RVRegister::Ra, RVRegister::Sp, prologue_info.stack_size + prologue_info.args_stack_size));
         }
-        target.epilogue.extend(vec![
-            Instruction::Addi {
-                rd: RVRegister::Sp,
-                rs: RVRegister::Sp,
-                imm: aligned_stack_size,
-            },
-            Instruction::Ret,
-        ]);
+        target.epilogue.extend(env.generate_addi(RVRegister::Sp, RVRegister::Sp, aligned_stack_size));
+        target.epilogue.push(Instruction::Ret);
     }
 }
 

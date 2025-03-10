@@ -106,11 +106,7 @@ impl<'a> AsmEnvironment<'a> {
                     // Try to apply a register
                     let register = self.register_pool.next().unwrap();
                     // Load from stack to register
-                    target.add_instruction(Instruction::Lw {
-                        rd: register.clone(),
-                        rs: RVRegister::Sp,
-                        imm: *offset,
-                    });
+                    target.instructions.extend(self.generate_lw(register.clone(), RVRegister::Sp, *offset));
                     register
                 }
                 ValueStorage::Immediate(imm) => {
@@ -147,17 +143,14 @@ impl<'a> AsmEnvironment<'a> {
     }
 
     pub fn store_data(&mut self, target: &mut AsmBasicBlock, value: &ValueData, register: Option<RVRegister>) {
-        match self.presence_table.get_mut(&(value as *const ValueData)) {
+        match self.presence_table.get(&(value as *const ValueData)) {
             Some(storage) => match storage {
                 ValueStorage::Register(_reg_prev) => unimplemented!(),
-                ValueStorage::Stack(offset) => {
+                ValueStorage::Stack(_offset) => {
                     // Store from register to stack
                     let register = register.unwrap();
-                    target.add_instruction(Instruction::Sw {
-                        rs: register,
-                        rd: RVRegister::Sp,
-                        imm: *offset,
-                    });
+                    let offset = *_offset;
+                    target.instructions.extend(self.generate_sw(register.clone(), RVRegister::Sp, offset));
 
                     // Free the register
                     self.register_pool.release(register);
@@ -222,5 +215,55 @@ impl<'a> AsmEnvironment<'a> {
 
     pub fn bind_name(&mut self, bb: &BasicBlock, name: String) {
         self.name_map.insert(bb.clone(), name);
+    }
+
+    pub fn generate_sw(&mut self, rs: RVRegister, rd: RVRegister, imm: i32) -> Vec<Instruction> {
+        // Immediate is always 12-bit, meaning we need to check if it fits in 12-bit
+        if imm >= -(1 << 11) && imm < (1 << 11) {
+            vec![ Instruction::Sw { rs, rd, imm } ]
+        } else {
+            // If it doesn't fit, we need to use a temporary register to store the immediate
+            let temp = self.register_pool.next().unwrap();
+            let instructions = vec![
+                Instruction::Li { rd: temp.clone(), imm },
+                Instruction::Add { rd: temp.clone(), rs1: temp.clone(), rs2: rd },
+                Instruction::Sw { rs, rd: temp.clone(), imm: 0 },
+            ];
+            self.free_register(temp);
+            instructions
+        }
+    }
+
+    pub fn generate_lw(&mut self, rd: RVRegister, rs: RVRegister, imm: i32) -> Vec<Instruction> {
+        // Immediate is always 12-bit, meaning we need to check if it fits in 12-bit
+        if imm >= -(1 << 11) && imm < (1 << 11) {
+            vec![ Instruction::Lw { rd, rs, imm } ]
+        } else {
+            // If it doesn't fit, we need to use a temporary register to store the immediate
+            let temp = self.register_pool.next().unwrap();
+            let instructions = vec![
+                Instruction::Li { rd: temp.clone(), imm },
+                Instruction::Add { rd: temp.clone(), rs1: temp.clone(), rs2: rs },
+                Instruction::Lw { rd, rs: temp.clone(), imm: 0 },
+            ];
+            self.free_register(temp);
+            instructions
+        }
+    }
+
+    pub fn generate_addi(&mut self, rd: RVRegister, rs: RVRegister, imm: i32) -> Vec<Instruction> {
+        // Immediate is always 12-bit, meaning we need to check if it fits in 12-bit
+        if imm >= -(1 << 11) && imm < (1 << 11) {
+            vec![ Instruction::Addi { rd, rs, imm } ]
+        } else {
+            // If it doesn't fit, we need to use a temporary register to store the immediate
+            let temp = self.register_pool.next().unwrap();
+            let instructions = vec![
+                Instruction::Li { rd: temp.clone(), imm },
+                Instruction::Add { rd, rs1: rs, rs2: temp.clone() },
+            ];
+            self.free_register(temp);
+            instructions
+        }
     }
 }

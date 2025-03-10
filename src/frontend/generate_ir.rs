@@ -205,8 +205,9 @@ impl IRGenerator for Stmt {
     fn generate_ir(&self, env: &mut IREnvironment) -> Result<Self::Output, FrontendError> {
         match self {
             Stmt::Return(expr) => {
-                let return_val = expr.generate_ir(env)?;
-                let return_stmt = local_value_builder!(env).ret(Some(return_val));
+                println!("Return statement");
+                let return_val = expr.as_ref().map(|expr| expr.generate_ir(env)).transpose()?;
+                let return_stmt = local_value_builder!(env).ret(return_val);
                 env.context.add_instruction(return_stmt);
                 Ok(())
             }
