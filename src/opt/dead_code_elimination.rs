@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use koopa::ir::{FunctionData, Value, ValueKind};
+use koopa::ir::builder::{LocalInstBuilder, ValueBuilder};
 use koopa::ir::entities::ValueData;
 use crate::opt::{OptError, OptPassFunction};
 
@@ -54,10 +55,13 @@ impl DeadCodeEliminationPass {
                 inst_cursor.move_next();
             }
 
-            if bb.insts().is_empty() {
-                // Remove the basic block
-                bb_worklist.push(*bb_cursor.key().unwrap());
+            if !bb.insts().back_key().is_some_and(|inst| self.terminators.contains(inst)) {
+                // The basic block is not terminated by a terminator instruction
+                // currently don't know how to handle this case
+                // just try to add a `return` instruction
+                bb_worklist.push(bb_cursor.key().unwrap().clone());
             }
+
             bb_cursor.move_next();
         }
 
@@ -72,8 +76,15 @@ impl DeadCodeEliminationPass {
         }
 
         // remove empty basic blocks
+        // for bb in bb_worklist {
+        //     drop(func_data.layout_mut().bbs_mut().remove(&bb));
+        // }
+
         for bb in bb_worklist {
-            drop(func_data.layout_mut().bbs_mut().remove(&bb));
+            let zero = func_data.dfg_mut().new_value().integer(0).clone();
+            let ret_inst = func_data.dfg_mut().new_value().ret(Some(zero)).clone();
+            let bb_node = func_data.layout_mut().bbs_mut().node_mut(&bb).unwrap();
+            bb_node.insts_mut().push_key_back(ret_inst).unwrap();
         }
     }
 
