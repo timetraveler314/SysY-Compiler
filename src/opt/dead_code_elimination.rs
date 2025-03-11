@@ -57,8 +57,9 @@ impl DeadCodeEliminationPass {
 
             if !bb.insts().back_key().is_some_and(|inst| self.terminators.contains(inst)) {
                 // The basic block is not terminated by a terminator instruction
-                // currently don't know how to handle this case
-                // just try to add a `return` instruction
+                // They are pushed into a worklist to avoid Rust's borrowing mechanism
+                // Finally, we follow the C++ rule:
+                // "if control reaches the end of the main function, return 0; is executed."
                 bb_worklist.push(bb_cursor.key().unwrap().clone());
             }
 
@@ -80,11 +81,13 @@ impl DeadCodeEliminationPass {
         //     drop(func_data.layout_mut().bbs_mut().remove(&bb));
         // }
 
-        for bb in bb_worklist {
-            let zero = func_data.dfg_mut().new_value().integer(0).clone();
-            let ret_inst = func_data.dfg_mut().new_value().ret(Some(zero)).clone();
-            let bb_node = func_data.layout_mut().bbs_mut().node_mut(&bb).unwrap();
-            bb_node.insts_mut().push_key_back(ret_inst).unwrap();
+        if func_data.name() == "@main" {
+            for bb in bb_worklist {
+                let zero = func_data.dfg_mut().new_value().integer(0).clone();
+                let ret_inst = func_data.dfg_mut().new_value().ret(Some(zero)).clone();
+                let bb_node = func_data.layout_mut().bbs_mut().node_mut(&bb).unwrap();
+                bb_node.insts_mut().push_key_back(ret_inst).unwrap();
+            }
         }
     }
 
